@@ -1,41 +1,110 @@
 import SwiftUI
 
 struct CloudBackupDetailScreen: View {
-    @State var detail: CloudBackupDetail
+    @State private var detail: CloudBackupDetail?
     @State private var isSyncing = false
+    @State private var syncError: String?
+    @State private var loadError: String?
+    @State private var cloudOnlyWallets: [CloudBackupWalletItem]?
+    @State private var isLoadingCloudOnly = false
 
     var body: some View {
         Form {
-            HeaderSection
-            if !detail.backedUp.isEmpty { BackedUpSections }
-            if !detail.notBackedUp.isEmpty {
-                NotBackedUpSections
-                SyncSection
+            if let detail {
+                DetailFormContent(
+                    detail: detail,
+                    isSyncing: $isSyncing,
+                    syncError: $syncError,
+                    cloudOnlyWallets: $cloudOnlyWallets,
+                    isLoadingCloudOnly: $isLoadingCloudOnly
+                )
+            } else if let loadError {
+                Section {
+                    VStack(spacing: 16) {
+                        Image(systemName: "exclamationmark.icloud.fill")
+                            .foregroundColor(.orange)
+                            .font(.largeTitle)
+
+                        Text(loadError)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+            } else {
+                Section {
+                    VStack {
+                        ProgressView("Checking cloud backup...")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
             }
-            if !detail.deletedFromDevice.isEmpty { DeletedFromDeviceSections }
         }
         .navigationTitle("Cloud Backup")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            if let refreshed = CloudBackupManager.shared.rust.refreshCloudBackupDetail() {
-                detail = refreshed
-            }
+            await refreshFromCloud()
         }
         .onChange(of: CloudBackupManager.shared.state) { _, newState in
             guard isSyncing, newState != .enabling else { return }
 
-            if newState == .enabled,
-               let refreshed = CloudBackupManager.shared.rust.refreshCloudBackupDetail()
-            {
-                detail = refreshed
-            }
+            Task { await refreshFromCloud() }
             isSyncing = false
+        }
+        .onChange(of: CloudBackupManager.shared.syncError) { _, error in
+            syncError = error
+            CloudBackupManager.shared.syncError = nil
         }
     }
 
-    // MARK: Header
+    private func refreshFromCloud() async {
+        let refreshed = await Task.detached {
+            CloudBackupManager.shared.rust.refreshCloudBackupDetail()
+        }.value
 
-    private var HeaderSection: some View {
+        if let refreshed {
+            detail = refreshed
+            loadError = nil
+        } else {
+            loadError = "Unable to verify backup status from iCloud"
+        }
+    }
+}
+
+// MARK: - Detail Form Content
+
+private struct DetailFormContent: View {
+    let detail: CloudBackupDetail
+    @Binding var isSyncing: Bool
+    @Binding var syncError: String?
+    @Binding var cloudOnlyWallets: [CloudBackupWalletItem]?
+    @Binding var isLoadingCloudOnly: Bool
+
+    var body: some View {
+        HeaderSection(lastSync: detail.lastSync)
+        if !detail.backedUp.isEmpty { BackedUpSections(wallets: detail.backedUp) }
+        if !detail.notBackedUp.isEmpty {
+            NotBackedUpSections(wallets: detail.notBackedUp)
+            SyncSection(isSyncing: $isSyncing, syncError: $syncError)
+        }
+        if detail.cloudOnlyCount > 0 {
+            CloudOnlySection(
+                count: detail.cloudOnlyCount,
+                wallets: $cloudOnlyWallets,
+                isLoading: $isLoadingCloudOnly
+            )
+        }
+    }
+}
+
+// MARK: - Header
+
+private struct HeaderSection: View {
+    let lastSync: UInt64?
+
+    var body: some View {
         Section {
             VStack(spacing: 8) {
                 Image(systemName: "checkmark.icloud.fill")
@@ -45,7 +114,7 @@ struct CloudBackupDetailScreen: View {
                 Text("Cloud Backup Active")
                     .fontWeight(.semibold)
 
-                if let lastSync = detail.lastSync {
+                if let lastSync {
                     Text("Last synced \(formatDate(lastSync))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -56,11 +125,22 @@ struct CloudBackupDetailScreen: View {
         }
     }
 
-    // MARK: Sync
+    private func formatDate(_ timestamp: UInt64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
 
-    private var SyncSection: some View {
+// MARK: - Sync Section
+
+private struct SyncSection: View {
+    @Binding var isSyncing: Bool
+    @Binding var syncError: String?
+
+    var body: some View {
         Section {
             Button {
+                syncError = nil
                 isSyncing = true
                 CloudBackupManager.shared.rust.syncUnsyncedWallets()
             } label: {
@@ -76,14 +156,70 @@ struct CloudBackupDetailScreen: View {
                 }
             }
             .disabled(isSyncing)
+
+            if let syncError {
+                Text(syncError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
     }
+}
 
-    // MARK: Backed Up
+// MARK: - Cloud Only Section
 
-    @ViewBuilder
-    private var BackedUpSections: some View {
-        let grouped = Dictionary(grouping: detail.backedUp) {
+private struct CloudOnlySection: View {
+    let count: UInt32
+    @Binding var wallets: [CloudBackupWalletItem]?
+    @Binding var isLoading: Bool
+
+    var body: some View {
+        Section(header: Text("Not on This Device")) {
+            if let wallets {
+                ForEach(wallets, id: \.name) { item in
+                    WalletItemRow(item: item)
+                }
+            } else {
+                HStack {
+                    Image(systemName: "icloud.and.arrow.down")
+                    Text("\(count) wallet(s) in cloud not on this device")
+                }
+                .foregroundStyle(.secondary)
+
+                Button {
+                    isLoading = true
+                    Task.detached {
+                        let items = CloudBackupManager.shared.rust.fetchCloudOnlyWallets()
+                        await MainActor.run {
+                            wallets = items
+                            isLoading = false
+                        }
+                    }
+                } label: {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .padding(.trailing, 8)
+                            Text("Loading...")
+                        } else {
+                            Image(systemName: "info.circle")
+                            Text("Get More Info")
+                        }
+                    }
+                }
+                .disabled(isLoading)
+            }
+        }
+    }
+}
+
+// MARK: - Backed Up Sections
+
+private struct BackedUpSections: View {
+    let wallets: [CloudBackupWalletItem]
+
+    var body: some View {
+        let grouped = Dictionary(grouping: wallets) {
             GroupKey(network: $0.network, walletMode: $0.walletMode)
         }
 
@@ -95,12 +231,15 @@ struct CloudBackupDetailScreen: View {
             }
         }
     }
+}
 
-    // MARK: Not Backed Up
+// MARK: - Not Backed Up Sections
 
-    @ViewBuilder
-    private var NotBackedUpSections: some View {
-        let grouped = Dictionary(grouping: detail.notBackedUp) {
+private struct NotBackedUpSections: View {
+    let wallets: [CloudBackupWalletItem]
+
+    var body: some View {
+        let grouped = Dictionary(grouping: wallets) {
             GroupKey(network: $0.network, walletMode: $0.walletMode)
         }
 
@@ -120,28 +259,6 @@ struct CloudBackupDetailScreen: View {
                 }
             }
         }
-    }
-
-    // MARK: Deleted From Device
-
-    @ViewBuilder
-    private var DeletedFromDeviceSections: some View {
-        let grouped = Dictionary(grouping: detail.deletedFromDevice) {
-            GroupKey(network: $0.network, walletMode: $0.walletMode)
-        }
-
-        ForEach(grouped.keys.sorted(), id: \.self) { key in
-            Section(header: Text("\(key.title) · Deleted")) {
-                ForEach(grouped[key]!, id: \.name) { item in
-                    WalletItemRow(item: item)
-                }
-            }
-        }
-    }
-
-    private func formatDate(_ timestamp: UInt64) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
-        return date.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
@@ -182,7 +299,7 @@ private struct StatusBadge: View {
         switch status {
         case .backedUp: "Backed up"
         case .notBackedUp: "Not backed up"
-        case .deletedFromDevice: "Deleted"
+        case .deletedFromDevice: "Not on device"
         }
     }
 

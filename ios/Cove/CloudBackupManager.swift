@@ -11,6 +11,7 @@ final class CloudBackupManager: CloudBackupManagerReconciler, @unchecked Sendabl
     var state: CloudBackupState = .disabled
     var progress: (completed: UInt32, total: UInt32)?
     var restoreReport: CloudBackupRestoreReport?
+    var syncError: String?
 
     private init() {
         self.rust = RustCloudBackupManager()
@@ -32,6 +33,8 @@ final class CloudBackupManager: CloudBackupManagerReconciler, @unchecked Sendabl
             case let .restoreComplete(report):
                 self.restoreReport = report
                 self.progress = nil
+            case let .syncFailed(error):
+                self.syncError = error
             }
         }
     }

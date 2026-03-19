@@ -45,35 +45,36 @@ final class CloudStorageAccessImpl: CloudStorageAccess, @unchecked Sendable {
     func hasCloudBackup() throws -> Bool {
         let recordID = CKRecord.ID(recordName: csppManifestRecordId())
         let semaphore = DispatchSemaphore(value: 0)
-        var fetchResult: Result<Bool, CloudStorageError>!
+        var fetchResult: Result<Bool, CloudStorageError>?
 
-        db.fetch(withRecordID: recordID) { record, error in
-            if let record {
-                _ = record // record exists
+        let operation = CKFetchRecordsOperation(recordIDs: [recordID])
+        operation.perRecordResultBlock = { _, result in
+            switch result {
+            case .success:
                 fetchResult = .success(true)
-            } else if let ckError = error as? CKError {
-                switch ckError.code {
-                case .unknownItem:
+            case let .failure(error):
+                if let ckError = error as? CKError, ckError.code == .unknownItem {
                     fetchResult = .success(false)
-                case .networkUnavailable, .networkFailure, .serviceUnavailable:
-                    fetchResult = .failure(
-                        .NotAvailable(ckError.localizedDescription)
-                    )
-                default:
-                    fetchResult = .failure(
-                        .DownloadFailed(ckError.localizedDescription)
-                    )
+                } else {
+                    fetchResult = .failure(Self.mapFetchError(error, recordId: "manifest"))
                 }
-            } else if let error {
-                fetchResult = .failure(.NotAvailable(error.localizedDescription))
-            } else {
-                fetchResult = .success(false)
+            }
+        }
+        operation.fetchRecordsResultBlock = { result in
+            if fetchResult == nil {
+                if case let .failure(error) = result {
+                    Log.error("CloudKit hasCloudBackup operation failed: \(error)")
+                    fetchResult = .failure(Self.mapFetchError(error, recordId: "manifest"))
+                } else {
+                    fetchResult = .success(false)
+                }
             }
             semaphore.signal()
         }
 
+        db.add(operation)
         semaphore.wait()
-        return try fetchResult.get()
+        return try fetchResult!.get()
     }
 
     // MARK: - Private helpers
@@ -115,10 +116,12 @@ final class CloudStorageAccessImpl: CloudStorageAccess, @unchecked Sendable {
     private func downloadRecord(recordId: String) throws -> Data {
         let recordID = CKRecord.ID(recordName: recordId)
         let semaphore = DispatchSemaphore(value: 0)
-        var fetchResult: Result<Data, CloudStorageError>!
+        var fetchResult: Result<Data, CloudStorageError>?
 
-        db.fetch(withRecordID: recordID) { record, error in
-            if let record {
+        let operation = CKFetchRecordsOperation(recordIDs: [recordID])
+        operation.perRecordResultBlock = { _, result in
+            switch result {
+            case let .success(record):
                 if let data = record[Self.dataField] as? Data {
                     fetchResult = .success(data)
                 } else {
@@ -126,28 +129,44 @@ final class CloudStorageAccessImpl: CloudStorageAccess, @unchecked Sendable {
                         .DownloadFailed("record '\(recordId)' exists but data field is nil")
                     )
                 }
-            } else if let ckError = error as? CKError {
-                switch ckError.code {
-                case .unknownItem:
+            case let .failure(error):
+                fetchResult = .failure(Self.mapFetchError(error, recordId: recordId))
+            }
+        }
+        operation.fetchRecordsResultBlock = { result in
+            if fetchResult == nil {
+                if case let .failure(error) = result {
+                    Log.error("CloudKit fetch operation failed: \(error)")
+                    fetchResult = .failure(Self.mapFetchError(error, recordId: recordId))
+                } else {
                     fetchResult = .failure(.NotFound(recordId))
-                case .networkUnavailable, .networkFailure, .serviceUnavailable:
-                    fetchResult = .failure(
-                        .NotAvailable(ckError.localizedDescription)
-                    )
-                default:
-                    fetchResult = .failure(
-                        .DownloadFailed(ckError.localizedDescription)
-                    )
                 }
-            } else if let error {
-                fetchResult = .failure(.DownloadFailed(error.localizedDescription))
-            } else {
-                fetchResult = .failure(.NotFound(recordId))
             }
             semaphore.signal()
         }
 
+        db.add(operation)
         semaphore.wait()
-        return try fetchResult.get()
+        return try fetchResult!.get()
+    }
+
+    private static func mapFetchError(_ error: Error, recordId: String) -> CloudStorageError {
+        if let ckError = error as? CKError {
+            Log.error(
+                "CloudKit CKError code=\(ckError.code.rawValue) "
+                    + "domain=\(ckError.errorCode) "
+                    + "userInfo=\(ckError.userInfo)"
+            )
+            switch ckError.code {
+            case .unknownItem:
+                return .NotFound(recordId)
+            case .networkUnavailable, .networkFailure, .serviceUnavailable:
+                return .NotAvailable(ckError.localizedDescription)
+            default:
+                return .DownloadFailed(ckError.localizedDescription)
+            }
+        }
+        Log.error("CloudKit non-CK error: \(error)")
+        return .DownloadFailed(error.localizedDescription)
     }
 }

@@ -1411,28 +1411,35 @@ public func FfiConverterTypePasskeyError_lower(_ value: PasskeyError) -> RustBuf
 
 public protocol CloudStorageAccess: AnyObject, Sendable {
     
-    func uploadMasterKeyBackup(data: Data) throws 
+    func uploadMasterKeyBackup(namespace: String, data: Data) throws 
     
-    func uploadWalletBackup(recordId: String, data: Data) throws 
+    func uploadWalletBackup(namespace: String, recordId: String, data: Data) throws 
     
-    func downloadMasterKeyBackup() throws  -> Data
+    func downloadMasterKeyBackup(namespace: String) throws  -> Data
     
-    func downloadWalletBackup(recordId: String) throws  -> Data
+    func downloadWalletBackup(namespace: String, recordId: String) throws  -> Data
     
-    func deleteWalletBackup(recordId: String) throws 
-    
-    func uploadManifest(data: Data) throws 
-    
-    func downloadManifest() throws  -> Data
+    func deleteWalletBackup(namespace: String, recordId: String) throws 
     
     /**
-     * Check if a complete cloud backup exists by probing the manifest record
-     *
-     * Returns Ok(true) if manifest record exists (complete backup set),
-     * Ok(false) if definitely absent,
-     * Err for transient failures (network, iCloud unavailable)
+     * List all namespace IDs (subdirectories of cspp-namespaces/)
      */
-    func hasCloudBackup() throws  -> Bool
+    func listNamespaces() throws  -> [String]
+    
+    /**
+     * List wallet backup record IDs within a namespace (excludes master key file)
+     */
+    func listWalletBackups(namespace: String) throws  -> [String]
+    
+    /**
+     * Check if any cloud backup namespaces exist
+     */
+    func hasAnyCloudBackup() throws  -> Bool
+    
+    /**
+     * Delete all flat-format files directly in Data/ (legacy cleanup)
+     */
+    func deleteAllFlatFiles() throws 
     
 }
 
@@ -1461,6 +1468,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
         },
         uploadMasterKeyBackup: { (
             uniffiHandle: UInt64,
+            namespace: RustBuffer,
             data: RustBuffer,
             uniffiOutReturn: UnsafeMutableRawPointer,
             uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
@@ -1471,6 +1479,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
                 return try uniffiObj.uploadMasterKeyBackup(
+                     namespace: try FfiConverterString.lift(namespace),
                      data: try FfiConverterData.lift(data)
                 )
             }
@@ -1486,6 +1495,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
         },
         uploadWalletBackup: { (
             uniffiHandle: UInt64,
+            namespace: RustBuffer,
             recordId: RustBuffer,
             data: RustBuffer,
             uniffiOutReturn: UnsafeMutableRawPointer,
@@ -1497,6 +1507,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
                 return try uniffiObj.uploadWalletBackup(
+                     namespace: try FfiConverterString.lift(namespace),
                      recordId: try FfiConverterString.lift(recordId),
                      data: try FfiConverterData.lift(data)
                 )
@@ -1513,6 +1524,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
         },
         downloadMasterKeyBackup: { (
             uniffiHandle: UInt64,
+            namespace: RustBuffer,
             uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
             uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
         ) in
@@ -1522,6 +1534,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
                 return try uniffiObj.downloadMasterKeyBackup(
+                     namespace: try FfiConverterString.lift(namespace)
                 )
             }
 
@@ -1536,6 +1549,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
         },
         downloadWalletBackup: { (
             uniffiHandle: UInt64,
+            namespace: RustBuffer,
             recordId: RustBuffer,
             uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
             uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
@@ -1546,6 +1560,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
                 return try uniffiObj.downloadWalletBackup(
+                     namespace: try FfiConverterString.lift(namespace),
                      recordId: try FfiConverterString.lift(recordId)
                 )
             }
@@ -1561,6 +1576,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
         },
         deleteWalletBackup: { (
             uniffiHandle: UInt64,
+            namespace: RustBuffer,
             recordId: RustBuffer,
             uniffiOutReturn: UnsafeMutableRawPointer,
             uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
@@ -1571,6 +1587,7 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
                 return try uniffiObj.deleteWalletBackup(
+                     namespace: try FfiConverterString.lift(namespace),
                      recordId: try FfiConverterString.lift(recordId)
                 )
             }
@@ -1584,47 +1601,22 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
                 lowerError: FfiConverterTypeCloudStorageError_lower
             )
         },
-        uploadManifest: { (
-            uniffiHandle: UInt64,
-            data: RustBuffer,
-            uniffiOutReturn: UnsafeMutableRawPointer,
-            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
-        ) in
-            let makeCall = {
-                () throws -> () in
-                guard let uniffiObj = try? FfiConverterCallbackInterfaceCloudStorageAccess.handleMap.get(handle: uniffiHandle) else {
-                    throw UniffiInternalError.unexpectedStaleHandle
-                }
-                return try uniffiObj.uploadManifest(
-                     data: try FfiConverterData.lift(data)
-                )
-            }
-
-            
-            let writeReturn = { () }
-            uniffiTraitInterfaceCallWithError(
-                callStatus: uniffiCallStatus,
-                makeCall: makeCall,
-                writeReturn: writeReturn,
-                lowerError: FfiConverterTypeCloudStorageError_lower
-            )
-        },
-        downloadManifest: { (
+        listNamespaces: { (
             uniffiHandle: UInt64,
             uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
             uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
         ) in
             let makeCall = {
-                () throws -> Data in
+                () throws -> [String] in
                 guard let uniffiObj = try? FfiConverterCallbackInterfaceCloudStorageAccess.handleMap.get(handle: uniffiHandle) else {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
-                return try uniffiObj.downloadManifest(
+                return try uniffiObj.listNamespaces(
                 )
             }
 
             
-            let writeReturn = { uniffiOutReturn.pointee = FfiConverterData.lower($0) }
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterSequenceString.lower($0) }
             uniffiTraitInterfaceCallWithError(
                 callStatus: uniffiCallStatus,
                 makeCall: makeCall,
@@ -1632,7 +1624,32 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
                 lowerError: FfiConverterTypeCloudStorageError_lower
             )
         },
-        hasCloudBackup: { (
+        listWalletBackups: { (
+            uniffiHandle: UInt64,
+            namespace: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> [String] in
+                guard let uniffiObj = try? FfiConverterCallbackInterfaceCloudStorageAccess.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.listWalletBackups(
+                     namespace: try FfiConverterString.lift(namespace)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterSequenceString.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeCloudStorageError_lower
+            )
+        },
+        hasAnyCloudBackup: { (
             uniffiHandle: UInt64,
             uniffiOutReturn: UnsafeMutablePointer<Int8>,
             uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
@@ -1642,12 +1659,35 @@ fileprivate struct UniffiCallbackInterfaceCloudStorageAccess {
                 guard let uniffiObj = try? FfiConverterCallbackInterfaceCloudStorageAccess.handleMap.get(handle: uniffiHandle) else {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
-                return try uniffiObj.hasCloudBackup(
+                return try uniffiObj.hasAnyCloudBackup(
                 )
             }
 
             
             let writeReturn = { uniffiOutReturn.pointee = FfiConverterBool.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeCloudStorageError_lower
+            )
+        },
+        deleteAllFlatFiles: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterCallbackInterfaceCloudStorageAccess.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.deleteAllFlatFiles(
+                )
+            }
+
+            
+            let writeReturn = { () }
             uniffiTraitInterfaceCallWithError(
                 callStatus: uniffiCallStatus,
                 makeCall: makeCall,
@@ -2348,6 +2388,31 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    public static func write(_ value: [String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -2378,28 +2443,31 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_device_checksum_constructor_passkeyaccess_new() != 32284) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_device_checksum_method_cloudstorageaccess_upload_master_key_backup() != 7846) {
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_upload_master_key_backup() != 38493) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_device_checksum_method_cloudstorageaccess_upload_wallet_backup() != 53080) {
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_upload_wallet_backup() != 48039) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_device_checksum_method_cloudstorageaccess_download_master_key_backup() != 36825) {
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_download_master_key_backup() != 17041) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_device_checksum_method_cloudstorageaccess_download_wallet_backup() != 32044) {
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_download_wallet_backup() != 58597) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_device_checksum_method_cloudstorageaccess_delete_wallet_backup() != 27682) {
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_delete_wallet_backup() != 46277) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_device_checksum_method_cloudstorageaccess_upload_manifest() != 62435) {
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_list_namespaces() != 28959) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_device_checksum_method_cloudstorageaccess_download_manifest() != 45872) {
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_list_wallet_backups() != 62685) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_device_checksum_method_cloudstorageaccess_has_cloud_backup() != 24668) {
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_has_any_cloud_backup() != 28006) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_device_checksum_method_cloudstorageaccess_delete_all_flat_files() != 602) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_device_checksum_method_deviceaccess_timezone() != 54194) {

@@ -24,26 +24,44 @@ pub enum CloudStorageError {
 
 #[uniffi::export(callback_interface)]
 pub trait CloudStorageAccess: Send + Sync + std::fmt::Debug + 'static {
-    fn upload_master_key_backup(&self, data: Vec<u8>) -> Result<(), CloudStorageError>;
+    fn upload_master_key_backup(
+        &self,
+        namespace: String,
+        data: Vec<u8>,
+    ) -> Result<(), CloudStorageError>;
+
     fn upload_wallet_backup(
         &self,
+        namespace: String,
         record_id: String,
         data: Vec<u8>,
     ) -> Result<(), CloudStorageError>;
 
-    fn download_master_key_backup(&self) -> Result<Vec<u8>, CloudStorageError>;
-    fn download_wallet_backup(&self, record_id: String) -> Result<Vec<u8>, CloudStorageError>;
-    fn delete_wallet_backup(&self, record_id: String) -> Result<(), CloudStorageError>;
+    fn download_master_key_backup(&self, namespace: String) -> Result<Vec<u8>, CloudStorageError>;
 
-    fn upload_manifest(&self, data: Vec<u8>) -> Result<(), CloudStorageError>;
-    fn download_manifest(&self) -> Result<Vec<u8>, CloudStorageError>;
+    fn download_wallet_backup(
+        &self,
+        namespace: String,
+        record_id: String,
+    ) -> Result<Vec<u8>, CloudStorageError>;
 
-    /// Check if a complete cloud backup exists by probing the manifest record
-    ///
-    /// Returns Ok(true) if manifest record exists (complete backup set),
-    /// Ok(false) if definitely absent,
-    /// Err for transient failures (network, iCloud unavailable)
-    fn has_cloud_backup(&self) -> Result<bool, CloudStorageError>;
+    fn delete_wallet_backup(
+        &self,
+        namespace: String,
+        record_id: String,
+    ) -> Result<(), CloudStorageError>;
+
+    /// List all namespace IDs (subdirectories of cspp-namespaces/)
+    fn list_namespaces(&self) -> Result<Vec<String>, CloudStorageError>;
+
+    /// List wallet backup record IDs within a namespace (excludes master key file)
+    fn list_wallet_backups(&self, namespace: String) -> Result<Vec<String>, CloudStorageError>;
+
+    /// Check if any cloud backup namespaces exist
+    fn has_any_cloud_backup(&self) -> Result<bool, CloudStorageError>;
+
+    /// Delete all flat-format files directly in Data/ (legacy cleanup)
+    fn delete_all_flat_files(&self) -> Result<(), CloudStorageError>;
 }
 
 static REF: OnceCell<CloudStorage> = OnceCell::new();
@@ -74,39 +92,59 @@ impl CloudStorage {
 }
 
 impl CloudStorage {
-    pub fn upload_master_key_backup(&self, data: Vec<u8>) -> Result<(), CloudStorageError> {
-        self.0.upload_master_key_backup(data)
+    pub fn upload_master_key_backup(
+        &self,
+        namespace: String,
+        data: Vec<u8>,
+    ) -> Result<(), CloudStorageError> {
+        self.0.upload_master_key_backup(namespace, data)
     }
 
     pub fn upload_wallet_backup(
         &self,
+        namespace: String,
         record_id: String,
         data: Vec<u8>,
     ) -> Result<(), CloudStorageError> {
-        self.0.upload_wallet_backup(record_id, data)
+        self.0.upload_wallet_backup(namespace, record_id, data)
     }
 
-    pub fn download_master_key_backup(&self) -> Result<Vec<u8>, CloudStorageError> {
-        self.0.download_master_key_backup()
+    pub fn download_master_key_backup(
+        &self,
+        namespace: String,
+    ) -> Result<Vec<u8>, CloudStorageError> {
+        self.0.download_master_key_backup(namespace)
     }
 
-    pub fn download_wallet_backup(&self, record_id: String) -> Result<Vec<u8>, CloudStorageError> {
-        self.0.download_wallet_backup(record_id)
+    pub fn download_wallet_backup(
+        &self,
+        namespace: String,
+        record_id: String,
+    ) -> Result<Vec<u8>, CloudStorageError> {
+        self.0.download_wallet_backup(namespace, record_id)
     }
 
-    pub fn delete_wallet_backup(&self, record_id: String) -> Result<(), CloudStorageError> {
-        self.0.delete_wallet_backup(record_id)
+    pub fn delete_wallet_backup(
+        &self,
+        namespace: String,
+        record_id: String,
+    ) -> Result<(), CloudStorageError> {
+        self.0.delete_wallet_backup(namespace, record_id)
     }
 
-    pub fn upload_manifest(&self, data: Vec<u8>) -> Result<(), CloudStorageError> {
-        self.0.upload_manifest(data)
+    pub fn list_namespaces(&self) -> Result<Vec<String>, CloudStorageError> {
+        self.0.list_namespaces()
     }
 
-    pub fn download_manifest(&self) -> Result<Vec<u8>, CloudStorageError> {
-        self.0.download_manifest()
+    pub fn list_wallet_backups(&self, namespace: String) -> Result<Vec<String>, CloudStorageError> {
+        self.0.list_wallet_backups(namespace)
     }
 
-    pub fn has_cloud_backup(&self) -> Result<bool, CloudStorageError> {
-        self.0.has_cloud_backup()
+    pub fn has_any_cloud_backup(&self) -> Result<bool, CloudStorageError> {
+        self.0.has_any_cloud_backup()
+    }
+
+    pub fn delete_all_flat_files(&self) -> Result<(), CloudStorageError> {
+        self.0.delete_all_flat_files()
     }
 }

@@ -30,6 +30,11 @@ impl MasterKey {
     pub fn critical_data_key(&self) -> [u8; 32] {
         crate::key_derivation::derive_critical_data_key(&self.0)
     }
+
+    /// Derive the namespace identifier for cloud backup directory namespacing
+    pub fn namespace_id(&self) -> String {
+        crate::key_derivation::derive_namespace_id(&self.0)
+    }
 }
 
 #[cfg(test)]
@@ -63,5 +68,21 @@ mod tests {
         let derived1 = key.critical_data_key();
         let derived2 = key.critical_data_key();
         assert_eq!(derived1, derived2);
+    }
+
+    #[test]
+    fn namespace_id_derivation() {
+        let key = MasterKey::generate();
+        let ns1 = key.namespace_id();
+        let ns2 = key.namespace_id();
+        assert_eq!(ns1, ns2);
+        assert_eq!(ns1.len(), 32);
+    }
+
+    #[test]
+    fn different_keys_different_namespace_ids() {
+        let key_a = MasterKey::generate();
+        let key_b = MasterKey::generate();
+        assert_ne!(key_a.namespace_id(), key_b.namespace_id());
     }
 }

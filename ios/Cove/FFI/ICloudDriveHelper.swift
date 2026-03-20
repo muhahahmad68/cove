@@ -7,6 +7,7 @@ final class ICloudDriveHelper: @unchecked Sendable {
 
     private let containerIdentifier = "iCloud.com.covebitcoinwallet"
     private let dataSubdirectory = "Data"
+    private let namespacesSubdirectory = csppNamespacesSubdirectory()
     private let defaultTimeout: TimeInterval = 60
     private let pollInterval: TimeInterval = 0.1
 
@@ -29,14 +30,52 @@ final class ICloudDriveHelper: @unchecked Sendable {
         return url
     }
 
-    /// Deterministic opaque filename: SHA256(recordId).json
-    static func hashedFilename(for recordId: String) -> String {
-        let hash = SHA256.hash(data: Data(recordId.utf8))
-        return hash.compactMap { String(format: "%02x", $0) }.joined() + ".json"
+    /// Root directory for all namespaces: Data/cspp-namespaces/
+    func namespacesRootURL() throws -> URL {
+        let url = try dataDirectoryURL()
+            .appendingPathComponent(namespacesSubdirectory, isDirectory: true)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        return url
     }
 
-    func fileURL(for recordId: String) throws -> URL {
-        try dataDirectoryURL().appendingPathComponent(Self.hashedFilename(for: recordId))
+    /// Directory for a specific namespace: Data/cspp-namespaces/{namespace}/
+    func namespaceDirectoryURL(namespace: String) throws -> URL {
+        let url = try namespacesRootURL()
+            .appendingPathComponent(namespace, isDirectory: true)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        return url
+    }
+
+    /// Master key file URL within a namespace
+    ///
+    /// Filename: masterkey-{SHA256(MASTER_KEY_RECORD_ID)}.json
+    func masterKeyFileURL(namespace: String) throws -> URL {
+        let recordId = csppMasterKeyRecordId()
+        let hash = SHA256.hash(data: Data(recordId.utf8))
+        let hexHash = hash.compactMap { String(format: "%02x", $0) }.joined()
+        let filename = "masterkey-\(hexHash).json"
+        return try namespaceDirectoryURL(namespace: namespace)
+            .appendingPathComponent(filename)
+    }
+
+    /// Wallet backup file URL within a namespace
+    ///
+    /// Filename: wallet-{recordId}.json — recordId is already SHA256(wallet_id)
+    func walletFileURL(namespace: String, recordId: String) throws -> URL {
+        let filename = "wallet-\(recordId).json"
+        return try namespaceDirectoryURL(namespace: namespace)
+            .appendingPathComponent(filename)
+    }
+
+    /// Legacy flat file URL (for migration/cleanup)
+    func legacyFileURL(for recordId: String) throws -> URL {
+        let hash = SHA256.hash(data: Data(recordId.utf8))
+        let filename = hash.compactMap { String(format: "%02x", $0) }.joined() + ".json"
+        return try dataDirectoryURL().appendingPathComponent(filename)
     }
 
     // MARK: - File coordination
@@ -196,19 +235,18 @@ final class ICloudDriveHelper: @unchecked Sendable {
 
     // MARK: - Cloud presence via NSMetadataQuery
 
-    /// Authoritatively checks whether a file exists in iCloud (finds evicted files too)
+    /// Runs an NSMetadataQuery and returns all matching items
     ///
     /// Must NOT be called from the main thread
-    func fileExistsInCloud(name: String) throws -> Bool {
+    func metadataQuery(predicate: NSPredicate) throws -> [NSMetadataItem] {
         let semaphore = DispatchSemaphore(value: 0)
-        var found = false
+        var results: [NSMetadataItem] = []
         var startFailed = false
 
         let query = NSMetadataQuery()
         query.searchScopes = [NSMetadataQueryUbiquitousDataScope]
-        query.predicate = NSPredicate(format: "%K == %@", NSMetadataItemFSNameKey, name)
+        query.predicate = predicate
 
-        // use a class wrapper to avoid sendable closure capture issues
         class ObserverBox {
             var observer: NSObjectProtocol?
             func remove() {
@@ -226,7 +264,7 @@ final class ICloudDriveHelper: @unchecked Sendable {
             queue: .main
         ) { _ in
             query.disableUpdates()
-            found = query.resultCount > 0
+            results = (0 ..< query.resultCount).compactMap { query.result(at: $0) as? NSMetadataItem }
             query.stop()
             box.remove()
             semaphore.signal()
@@ -252,7 +290,88 @@ final class ICloudDriveHelper: @unchecked Sendable {
             throw CloudStorageError.NotAvailable("failed to start iCloud metadata query")
         }
 
-        return found
+        return results
+    }
+
+    /// Authoritatively checks whether a file exists in iCloud (finds evicted files too)
+    ///
+    /// Must NOT be called from the main thread
+    func fileExistsInCloud(name: String) throws -> Bool {
+        let predicate = NSPredicate(format: "%K == %@", NSMetadataItemFSNameKey, name)
+        let results = try metadataQuery(predicate: predicate)
+        return !results.isEmpty
+    }
+
+    /// Resolve symlinks so /var and /private/var compare correctly
+    private static func resolvedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    }
+
+    /// Checks for legacy flat-format .json files directly in the Data/ directory via NSMetadataQuery
+    func hasLegacyFlatFiles() throws -> Bool {
+        let dataDir = try dataDirectoryURL()
+        let resolvedDataDir = Self.resolvedPath(dataDir.path)
+        let predicate = NSPredicate(
+            format: "%K BEGINSWITH %@ AND %K ENDSWITH[c] %@",
+            NSMetadataItemPathKey, resolvedDataDir,
+            NSMetadataItemFSNameKey, ".json"
+        )
+        let results = try metadataQuery(predicate: predicate)
+
+        let prefix = resolvedDataDir + "/"
+
+        // only count .json files directly in Data/, not in subdirectories
+        return results.contains { item in
+            guard let path = item.value(forAttribute: NSMetadataItemPathKey) as? String else {
+                return false
+            }
+            let resolved = Self.resolvedPath(path)
+            guard resolved.hasPrefix(prefix) else { return false }
+            let relative = String(resolved.dropFirst(prefix.count))
+            return !relative.contains("/")
+        }
+    }
+
+    /// Lists subdirectory names within a given directory path using NSMetadataQuery
+    ///
+    /// Finds items whose path contains the parent directory and filters for directories
+    func listSubdirectories(parentPath: String) throws -> [String] {
+        let resolvedParent = Self.resolvedPath(parentPath)
+        let predicate = NSPredicate(format: "%K BEGINSWITH %@", NSMetadataItemPathKey, resolvedParent)
+        let results = try metadataQuery(predicate: predicate)
+
+        let prefix = resolvedParent + "/"
+        var subdirs = Set<String>()
+
+        for item in results {
+            guard let path = item.value(forAttribute: NSMetadataItemPathKey) as? String else {
+                continue
+            }
+
+            let resolved = Self.resolvedPath(path)
+            guard resolved.hasPrefix(prefix) else { continue }
+            let relative = String(resolved.dropFirst(prefix.count))
+
+            if let firstComponent = relative.split(separator: "/").first {
+                subdirs.insert(String(firstComponent))
+            }
+        }
+
+        return Array(subdirs).sorted()
+    }
+
+    /// Lists filenames matching a prefix within a namespace directory using NSMetadataQuery
+    func listFiles(namespacePath: String, prefix: String) throws -> [String] {
+        let predicate = NSPredicate(
+            format: "%K BEGINSWITH %@ AND %K BEGINSWITH[c] %@",
+            NSMetadataItemPathKey, namespacePath,
+            NSMetadataItemFSNameKey, prefix
+        )
+        let results = try metadataQuery(predicate: predicate)
+
+        return results.compactMap { item in
+            item.value(forAttribute: NSMetadataItemFSNameKey) as? String
+        }.sorted()
     }
 
     // MARK: - Upload status for UI
@@ -285,48 +404,52 @@ final class ICloudDriveHelper: @unchecked Sendable {
         return .uploading
     }
 
-    /// Checks sync health of all files in the Data/ directory
+    /// Checks sync health of all files in namespace directories
     func overallSyncHealth() -> SyncHealth {
-        guard let dataDir = try? dataDirectoryURL() else {
+        guard let namespacesRoot = try? namespacesRootURL() else {
             return .unavailable
         }
 
         guard
-            let files = try? FileManager.default.contentsOfDirectory(
-                at: dataDir, includingPropertiesForKeys: nil
+            let namespaceDirs = try? FileManager.default.contentsOfDirectory(
+                at: namespacesRoot, includingPropertiesForKeys: nil,
+                options: .skipsHiddenFiles
             )
         else {
             return .unavailable
         }
 
-        if files.isEmpty {
-            return .noFiles
-        }
-
+        var hasFiles = false
         var allUploaded = true
         var anyFailed = false
         var failureMessage: String?
 
-        for file in files where file.pathExtension == "json" {
-            let status = uploadStatus(for: file)
-            switch status {
-            case .uploaded: continue
-            case .uploading: allUploaded = false
-            case let .failed(msg):
-                anyFailed = true
-                allUploaded = false
-                failureMessage = msg
-            case .unknown:
-                allUploaded = false
+        for nsDir in namespaceDirs where nsDir.hasDirectoryPath {
+            guard
+                let files = try? FileManager.default.contentsOfDirectory(
+                    at: nsDir, includingPropertiesForKeys: nil
+                )
+            else { continue }
+
+            for file in files where file.pathExtension == "json" {
+                hasFiles = true
+                let status = uploadStatus(for: file)
+                switch status {
+                case .uploaded: continue
+                case .uploading: allUploaded = false
+                case let .failed(msg):
+                    anyFailed = true
+                    allUploaded = false
+                    failureMessage = msg
+                case .unknown:
+                    allUploaded = false
+                }
             }
         }
 
-        if anyFailed {
-            return .failed(failureMessage ?? "upload error")
-        }
-        if allUploaded {
-            return .allUploaded
-        }
+        if !hasFiles { return .noFiles }
+        if anyFailed { return .failed(failureMessage ?? "upload error") }
+        if allUploaded { return .allUploaded }
         return .uploading
     }
 

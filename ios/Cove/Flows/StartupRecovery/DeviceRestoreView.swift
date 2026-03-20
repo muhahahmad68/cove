@@ -7,14 +7,12 @@ struct DeviceRestoreView: View {
     let onError: (String) -> Void
 
     enum RestorePhase {
-        case wiping
-        case bootstrapping
         case restoring
         case complete(CloudBackupRestoreReport)
         case error(String)
     }
 
-    @State private var phase: RestorePhase = .wiping
+    @State private var phase: RestorePhase = .restoring
     @State private var progress: (completed: UInt32, total: UInt32)?
     private let backupManager = CloudBackupManager.shared
 
@@ -43,20 +41,6 @@ struct DeviceRestoreView: View {
     @ViewBuilder
     private var phaseContent: some View {
         switch phase {
-        case .wiping:
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Preparing...")
-                    .foregroundStyle(.secondary)
-            }
-
-        case .bootstrapping:
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Initializing...")
-                    .foregroundStyle(.secondary)
-            }
-
         case .restoring:
             VStack(spacing: 12) {
                 if let progress {
@@ -103,7 +87,7 @@ struct DeviceRestoreView: View {
                     .padding(.horizontal, 32)
 
                 Button {
-                    phase = .wiping
+                    phase = .restoring
                     Task { await runRestore() }
                 } label: {
                     Text("Retry")
@@ -121,52 +105,10 @@ struct DeviceRestoreView: View {
             backupManager.restoreReport = nil
         }
 
-        // step 1: wipe local data
-        phase = .wiping
-        wipeLocalData()
-
-        // step 2: re-bootstrap
-        phase = .bootstrapping
-        resetBootstrapForRestore()
-        do {
-            _ = try await bootstrapWithTimeout()
-        } catch {
-            phase = .error("Bootstrap failed: \(error.localizedDescription)")
-            return
-        }
-
-        // step 3: swap database handle to the freshly created file
-        reinitDatabase()
-
-        // step 4: kick off cloud restore
         phase = .restoring
         backupManager.rust.restoreFromCloudBackup()
 
-        // step 5: observe state changes until we reach enabled or error
         await observeRestoreCompletion()
-    }
-
-    private func bootstrapWithTimeout() async throws -> String? {
-        try await withThrowingTaskGroup(of: BootstrapResult.self) { group in
-            group.addTask { try await .completed(warning: bootstrap()) }
-            group.addTask { try await self.watchdog() }
-
-            guard let result = try await group.next() else {
-                throw RestoreError.timeout
-            }
-            group.cancelAll()
-
-            switch result {
-            case let .completed(warning): return warning
-            case .timedOut: throw RestoreError.timeout
-            }
-        }
-    }
-
-    private func watchdog() async throws -> BootstrapResult {
-        try await Task.sleep(for: .seconds(15))
-        cancelBootstrap()
-        return .timedOut
     }
 
     private func observeRestoreCompletion() async {
@@ -214,22 +156,6 @@ struct DeviceRestoreView: View {
             default:
                 continue
             }
-        }
-    }
-}
-
-private enum BootstrapResult {
-    case completed(warning: String?)
-    case timedOut
-}
-
-private enum RestoreError: LocalizedError {
-    case timeout
-
-    var errorDescription: String? {
-        switch self {
-        case .timeout:
-            "Bootstrap timed out during restore"
         }
     }
 }

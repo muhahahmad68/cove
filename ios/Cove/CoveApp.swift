@@ -252,9 +252,9 @@ extension CoveApp {
                         return
                     }
 
-                    Log.info("[STARTUP] calling hasCloudBackup")
-                    let hasBackup = try cloud.hasCloudBackup()
-                    Log.info("[STARTUP] hasCloudBackup returned: \(hasBackup)")
+                    Log.info("[STARTUP] calling hasAnyCloudBackup")
+                    let hasBackup = try cloud.hasAnyCloudBackup()
+                    Log.info("[STARTUP] hasAnyCloudBackup returned: \(hasBackup)")
                     await MainActor.run {
                         if hasBackup {
                             self.startupState = .offerCloudRestore

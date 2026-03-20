@@ -4,16 +4,40 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::serde_helpers::{base64_serde, hex_array};
 
-/// Record ID for the master key in CloudKit
+/// Record ID for the master key in cloud backup
 pub const MASTER_KEY_RECORD_ID: &str = "cspp-master-key-v1";
 
-/// Record ID for the backup manifest in CloudKit
-pub const MANIFEST_RECORD_ID: &str = "cspp-manifest-v1";
+/// Filename prefix for the master key file in a namespace directory
+pub const MASTER_KEY_FILE_PREFIX: &str = "masterkey-";
 
-/// Deterministic CloudKit record ID for a wallet: SHA-256(wallet_id) hex-encoded
+/// Filename prefix for wallet backup files in a namespace directory
+pub const WALLET_FILE_PREFIX: &str = "wallet-";
+
+/// Subdirectory name for namespace directories within the iCloud Data folder
+pub const NAMESPACES_SUBDIRECTORY: &str = "cspp-namespaces";
+
+/// Deterministic cloud record ID for a wallet: SHA-256(wallet_id) hex-encoded
 pub fn wallet_record_id(wallet_id: &str) -> String {
     let hash = Sha256::digest(wallet_id.as_bytes());
     hex::encode(hash)
+}
+
+/// Cloud filename for the master key: masterkey-{SHA256(MASTER_KEY_RECORD_ID)}.json
+pub fn master_key_filename() -> String {
+    let hash = Sha256::digest(MASTER_KEY_RECORD_ID.as_bytes());
+    format!("{MASTER_KEY_FILE_PREFIX}{}.json", hex::encode(hash))
+}
+
+/// Cloud filename for a wallet backup: wallet-{SHA256(wallet_id)}.json
+pub fn wallet_filename(wallet_id: &str) -> String {
+    format!("{WALLET_FILE_PREFIX}{}.json", wallet_record_id(wallet_id))
+}
+
+/// Extract the wallet record ID (SHA256 hex) from a wallet filename
+///
+/// Returns None if the filename doesn't match the expected format
+pub fn wallet_record_id_from_filename(filename: &str) -> Option<&str> {
+    filename.strip_prefix(WALLET_FILE_PREFIX).and_then(|rest| rest.strip_suffix(".json"))
 }
 
 /// Wallet data to be encrypted and uploaded to cloud backup
@@ -91,16 +115,6 @@ pub struct EncryptedMasterKeyBackup {
     /// Encrypted master key bytes
     #[serde(with = "base64_serde")]
     pub ciphertext: Vec<u8>,
-}
-
-/// Plaintext backup manifest — no secrets, uploaded last as commit marker
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BackupManifest {
-    pub version: u32,
-    /// Unix timestamp when backup was created
-    pub created_at: u64,
-    /// Deterministic SHA-256(wallet_id) hex IDs of all backed-up wallets
-    pub wallet_record_ids: Vec<String>,
 }
 
 #[cfg(test)]
@@ -183,18 +197,32 @@ mod tests {
     }
 
     #[test]
-    fn backup_manifest_json_roundtrip() {
-        let manifest = BackupManifest {
-            version: 1,
-            created_at: 1700000000,
-            wallet_record_ids: vec!["abc123".to_string(), "def456".to_string()],
-        };
+    fn master_key_filename_format() {
+        let filename = master_key_filename();
+        assert!(filename.starts_with("masterkey-"));
+        assert!(filename.ends_with(".json"));
+    }
 
-        let json = serde_json::to_string(&manifest).unwrap();
-        let decoded: BackupManifest = serde_json::from_str(&json).unwrap();
+    #[test]
+    fn wallet_filename_format() {
+        let filename = wallet_filename("my-wallet-123");
+        assert!(filename.starts_with("wallet-"));
+        assert!(filename.ends_with(".json"));
+    }
 
-        assert_eq!(decoded.version, 1);
-        assert_eq!(decoded.wallet_record_ids.len(), 2);
+    #[test]
+    fn wallet_record_id_from_filename_roundtrip() {
+        let wallet_id = "my-wallet-123";
+        let record_id = wallet_record_id(wallet_id);
+        let filename = wallet_filename(wallet_id);
+        let extracted = wallet_record_id_from_filename(&filename).unwrap();
+        assert_eq!(extracted, record_id);
+    }
+
+    #[test]
+    fn wallet_record_id_from_filename_rejects_masterkey() {
+        let filename = master_key_filename();
+        assert!(wallet_record_id_from_filename(&filename).is_none());
     }
 
     #[test]

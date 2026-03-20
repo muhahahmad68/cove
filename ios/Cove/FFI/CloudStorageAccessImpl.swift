@@ -6,98 +6,95 @@ final class CloudStorageAccessImpl: CloudStorageAccess, @unchecked Sendable {
 
     // MARK: - Upload
 
-    func uploadMasterKeyBackup(data: Data) throws {
-        try upload(recordId: csppMasterKeyRecordId(), data: data)
+    func uploadMasterKeyBackup(namespace: String, data: Data) throws {
+        let url = try helper.masterKeyFileURL(namespace: namespace)
+        try helper.coordinatedWrite(data: data, to: url)
+        try helper.waitForUpload(url: url)
     }
 
-    func uploadWalletBackup(recordId: String, data: Data) throws {
-        try upload(recordId: recordId, data: data)
-    }
-
-    func uploadManifest(data: Data) throws {
-        try upload(recordId: csppManifestRecordId(), data: data)
+    func uploadWalletBackup(namespace: String, recordId: String, data: Data) throws {
+        let url = try helper.walletFileURL(namespace: namespace, recordId: recordId)
+        try helper.coordinatedWrite(data: data, to: url)
+        try helper.waitForUpload(url: url)
     }
 
     // MARK: - Download
 
-    func downloadMasterKeyBackup() throws -> Data {
-        try download(recordId: csppMasterKeyRecordId())
+    func downloadMasterKeyBackup(namespace: String) throws -> Data {
+        let url = try helper.masterKeyFileURL(namespace: namespace)
+        try helper.ensureDownloaded(url: url, recordId: "masterkey-\(namespace)")
+        return try helper.coordinatedRead(from: url)
     }
 
-    func downloadWalletBackup(recordId: String) throws -> Data {
-        try download(recordId: recordId)
+    func downloadWalletBackup(namespace: String, recordId: String) throws -> Data {
+        let url = try helper.walletFileURL(namespace: namespace, recordId: recordId)
+        try helper.ensureDownloaded(url: url, recordId: recordId)
+        return try helper.coordinatedRead(from: url)
     }
 
-    func deleteWalletBackup(recordId: String) throws {
-        let url = try helper.fileURL(for: recordId)
+    func deleteWalletBackup(namespace: String, recordId: String) throws {
+        let url = try helper.walletFileURL(namespace: namespace, recordId: recordId)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw CloudStorageError.NotFound(recordId)
         }
         try helper.coordinatedDelete(at: url)
     }
 
-    /// Downloads the manifest with authoritative NotFound semantics
-    ///
-    /// Uses NSMetadataQuery to confirm the file truly doesn't exist in iCloud
-    /// before returning NotFound, preventing false NotFound from sync lag
-    func downloadManifest() throws -> Data {
-        let recordId = csppManifestRecordId()
-        let filename = ICloudDriveHelper.hashedFilename(for: recordId)
-        let url = try helper.fileURL(for: recordId)
+    // MARK: - Namespace discovery
 
-        // check if file exists locally and is already downloaded
-        if FileManager.default.fileExists(atPath: url.path) {
-            let values = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
-            if values?.ubiquitousItemDownloadingStatus == .current {
-                return try helper.coordinatedRead(from: url)
+    func listNamespaces() throws -> [String] {
+        let namespacesRoot = try helper.namespacesRootURL()
+        return try helper.listSubdirectories(parentPath: namespacesRoot.path)
+    }
+
+    func listWalletBackups(namespace: String) throws -> [String] {
+        let nsDir = try helper.namespaceDirectoryURL(namespace: namespace)
+        let walletFiles = try helper.listFiles(namespacePath: nsDir.path, prefix: "wallet-")
+
+        // extract record IDs from filenames: wallet-{hash}.json -> {hash}
+        return walletFiles.compactMap { filename in
+            guard filename.hasPrefix("wallet-"), filename.hasSuffix(".json") else { return nil }
+            let start = filename.index(filename.startIndex, offsetBy: 7) // "wallet-".count
+            let end = filename.index(filename.endIndex, offsetBy: -5) // ".json".count
+            guard start < end else { return nil }
+            return String(filename[start ..< end])
+        }
+    }
+
+    func hasAnyCloudBackup() throws -> Bool {
+        let namespaces = try listNamespaces()
+        if !namespaces.isEmpty { return true }
+
+        return try helper.hasLegacyFlatFiles()
+    }
+
+    // MARK: - Cleanup
+
+    func deleteAllFlatFiles() throws {
+        let dataDir = try helper.dataDirectoryURL()
+        let resolvedDataDir = dataDir.resolvingSymlinksInPath().path
+        let prefix = resolvedDataDir + "/"
+
+        // use NSMetadataQuery to find all .json files (including evicted cloud-only files)
+        let predicate = NSPredicate(
+            format: "%K BEGINSWITH %@ AND %K ENDSWITH[c] %@",
+            NSMetadataItemPathKey, resolvedDataDir,
+            NSMetadataItemFSNameKey, ".json"
+        )
+        let results = try helper.metadataQuery(predicate: predicate)
+
+        for item in results {
+            guard let path = item.value(forAttribute: NSMetadataItemPathKey) as? String else {
+                continue
             }
 
-            // file exists locally but needs download (evicted)
-            try helper.ensureDownloaded(url: url, recordId: recordId)
-            return try helper.coordinatedRead(from: url)
+            // only delete files directly in Data/, not in subdirectories
+            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            guard resolved.hasPrefix(prefix) else { continue }
+            let relative = String(resolved.dropFirst(prefix.count))
+            guard !relative.contains("/") else { continue }
+
+            try helper.coordinatedDelete(at: URL(fileURLWithPath: path))
         }
-
-        // file not on local disk — use metadata query for authoritative check
-        let existsInCloud: Bool
-        do {
-            existsInCloud = try helper.fileExistsInCloud(name: filename)
-        } catch {
-            throw CloudStorageError.NotAvailable("cannot verify manifest: \(error.localizedDescription)")
-        }
-
-        guard existsInCloud else {
-            throw CloudStorageError.NotFound(recordId)
-        }
-
-        // file exists in cloud but not locally — download it
-        try helper.ensureDownloaded(url: url, recordId: recordId)
-        return try helper.coordinatedRead(from: url)
-    }
-
-    // MARK: - Presence check
-
-    /// Checks that BOTH manifest AND master key files exist in iCloud
-    func hasCloudBackup() throws -> Bool {
-        let manifestName = ICloudDriveHelper.hashedFilename(for: csppManifestRecordId())
-        let masterKeyName = ICloudDriveHelper.hashedFilename(for: csppMasterKeyRecordId())
-
-        let manifestExists = try helper.fileExistsInCloud(name: manifestName)
-        guard manifestExists else { return false }
-
-        return try helper.fileExistsInCloud(name: masterKeyName)
-    }
-
-    // MARK: - Private
-
-    private func upload(recordId: String, data: Data) throws {
-        let url = try helper.fileURL(for: recordId)
-        try helper.coordinatedWrite(data: data, to: url)
-        try helper.waitForUpload(url: url)
-    }
-
-    private func download(recordId: String) throws -> Data {
-        let url = try helper.fileURL(for: recordId)
-        try helper.ensureDownloaded(url: url, recordId: recordId)
-        return try helper.coordinatedRead(from: url)
     }
 }

@@ -7089,17 +7089,24 @@ public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
     func deepVerifyCloudBackup()  -> DeepVerificationResult
     
     /**
-     * Delete a single wallet backup from iCloud and remove it from the manifest
+     * Delete a single wallet backup from iCloud
      *
      * Returns None on success, Some(error) on failure
      */
     func deleteCloudWallet(recordId: String)  -> String?
     
     /**
+     * Delete legacy flat-format backup files from iCloud
+     *
+     * Returns None on success, Some(error) on failure
+     */
+    func deleteLegacyFlatBackup()  -> String?
+    
+    /**
      * Enable cloud backup — idempotent, safe to retry
      *
      * Creates passkey (or reuses existing), encrypts master key + all wallets,
-     * uploads to CloudKit, marks enabled only after manifest upload succeeds
+     * uploads to iCloud, marks enabled only after all uploads succeed
      */
     func enableCloudBackup() 
     
@@ -7125,7 +7132,7 @@ public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
     func listenForUpdates(reconciler: CloudBackupManagerReconciler) 
     
     /**
-     * Download the cloud manifest and build detail from it as source of truth
+     * List wallet backups in the current namespace and build detail
      *
      * Returns None if disabled. On NotFound, re-uploads all wallets automatically.
      * On other errors, returns AccessError so the UI can offer a re-upload button
@@ -7157,9 +7164,9 @@ public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
     func restoreFromCloudBackup() 
     
     /**
-     * Re-upload all local wallets and create a fresh manifest
+     * Re-upload all local wallets to the current namespace
      *
-     * Called from the UI when the manifest can't be downloaded (e.g. container mismatch).
+     * Called from the UI when cloud backups are missing (e.g. container mismatch).
      * Returns None on success, Some(error) on failure
      */
     func reuploadAllWallets()  -> String?
@@ -7283,7 +7290,7 @@ open func deepVerifyCloudBackup() -> DeepVerificationResult  {
 }
     
     /**
-     * Delete a single wallet backup from iCloud and remove it from the manifest
+     * Delete a single wallet backup from iCloud
      *
      * Returns None on success, Some(error) on failure
      */
@@ -7297,10 +7304,23 @@ open func deleteCloudWallet(recordId: String) -> String?  {
 }
     
     /**
+     * Delete legacy flat-format backup files from iCloud
+     *
+     * Returns None on success, Some(error) on failure
+     */
+open func deleteLegacyFlatBackup() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_delete_legacy_flat_backup(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
      * Enable cloud backup — idempotent, safe to retry
      *
      * Creates passkey (or reuses existing), encrypts master key + all wallets,
-     * uploads to CloudKit, marks enabled only after manifest upload succeeds
+     * uploads to iCloud, marks enabled only after all uploads succeed
      */
 open func enableCloudBackup()  {try! rustCall() {
     uniffi_cove_fn_method_rustcloudbackupmanager_enable_cloud_backup(
@@ -7355,7 +7375,7 @@ open func listenForUpdates(reconciler: CloudBackupManagerReconciler)  {try! rust
 }
     
     /**
-     * Download the cloud manifest and build detail from it as source of truth
+     * List wallet backups in the current namespace and build detail
      *
      * Returns None if disabled. On NotFound, re-uploads all wallets automatically.
      * On other errors, returns AccessError so the UI can offer a re-upload button
@@ -7411,9 +7431,9 @@ open func restoreFromCloudBackup()  {try! rustCall() {
 }
     
     /**
-     * Re-upload all local wallets and create a fresh manifest
+     * Re-upload all local wallets to the current namespace
      *
-     * Called from the UI when the manifest can't be downloaded (e.g. container mismatch).
+     * Called from the UI when cloud backups are missing (e.g. container mismatch).
      * Returns None on success, Some(error) on failure
      */
 open func reuploadAllWallets() -> String?  {
@@ -13213,7 +13233,7 @@ public struct DeepVerificationReport: Equatable, Hashable {
      */
     public var walletsUnsupported: UInt32
     /**
-     * May be None if manifest was missing but master key verified
+     * May be None if wallet list was missing but master key verified
      */
     public var detail: CloudBackupDetail?
 
@@ -13233,7 +13253,7 @@ public struct DeepVerificationReport: Equatable, Hashable {
          * Wallet backups with unsupported version (newer format, skipped)
          */walletsUnsupported: UInt32, 
         /**
-         * May be None if manifest was missing but master key verified
+         * May be None if wallet list was missing but master key verified
          */detail: CloudBackupDetail?) {
         self.masterKeyWrapperRepaired = masterKeyWrapperRepaired
         self.localMasterKeyRepaired = localMasterKeyRepaired
@@ -32441,15 +32461,15 @@ public func updatePricesIfNeeded()async   {
             
         )
 }
-public func csppManifestRecordId() -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-    uniffi_cove_fn_func_cspp_manifest_record_id($0
-    )
-})
-}
 public func csppMasterKeyRecordId() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_cove_fn_func_cspp_master_key_record_id($0
+    )
+})
+}
+public func csppNamespacesSubdirectory() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cove_fn_func_cspp_namespaces_subdirectory($0
     )
 })
 }
@@ -32736,10 +32756,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_func_updatepricesifneeded() != 5753) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_func_cspp_manifest_record_id() != 728) {
+    if (uniffi_cove_checksum_func_cspp_master_key_record_id() != 23703) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_func_cspp_master_key_record_id() != 23703) {
+    if (uniffi_cove_checksum_func_cspp_namespaces_subdirectory() != 8147) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_func_reinit_database() != 2611) {
@@ -33234,10 +33254,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_deep_verify_cloud_backup() != 62070) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_rustcloudbackupmanager_delete_cloud_wallet() != 29831) {
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_delete_cloud_wallet() != 61568) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_rustcloudbackupmanager_enable_cloud_backup() != 10837) {
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_delete_legacy_flat_backup() != 54663) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_enable_cloud_backup() != 10377) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_fetch_cloud_only_wallets() != 36750) {
@@ -33252,7 +33275,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_listen_for_updates() != 57718) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_rustcloudbackupmanager_refresh_cloud_backup_detail() != 11202) {
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_refresh_cloud_backup_detail() != 50323) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_repair_passkey_wrapper() != 15427) {
@@ -33264,7 +33287,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_restore_from_cloud_backup() != 40792) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_rustcloudbackupmanager_reupload_all_wallets() != 1497) {
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_reupload_all_wallets() != 55528) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_sync_persisted_state() != 19758) {

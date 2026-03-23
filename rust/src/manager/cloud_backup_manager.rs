@@ -11,8 +11,11 @@ use tracing::{error, info, warn};
 use zeroize::Zeroizing;
 
 use cove_cspp::backup_data::{
-    DescriptorPair, MASTER_KEY_RECORD_ID, WalletEntry, WalletMode, WalletSecret, wallet_record_id,
+    DescriptorPair, MASTER_KEY_RECORD_ID, WalletEntry, WalletMode,
+    WalletSecret as CloudWalletSecret, wallet_record_id,
 };
+
+type LocalWalletSecret = crate::backup::model::WalletSecret;
 use cove_cspp::master_key_crypto;
 use cove_cspp::wallet_crypto;
 use cove_device::cloud_storage::{CloudStorage, CloudStorageError};
@@ -20,6 +23,7 @@ use cove_device::keychain::Keychain;
 use cove_device::passkey::PasskeyAccess;
 use cove_types::network::Network;
 
+use crate::backup::model::DescriptorPair as LocalDescriptorPair;
 use crate::database::Database;
 use crate::database::global_config::CloudBackup;
 use crate::wallet::metadata::{WalletMetadata, WalletMode as LocalWalletMode, WalletType};
@@ -130,7 +134,7 @@ pub enum DeepVerificationFailure {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum CloudBackupError {
+pub(crate) enum CloudBackupError {
     #[error("not supported: {0}")]
     NotSupported(String),
 
@@ -255,10 +259,6 @@ impl RustCloudBackupManager {
         }
     }
 
-    /// Cloud backup detail for the detail screen
-    ///
-    /// Returns None if cloud backup is disabled. Compares cached wallet list
-    /// against current local wallets to determine backup status
     /// Check if cloud backup is enabled, used as nav guard
     pub fn is_cloud_backup_enabled(&self) -> bool {
         let db = Database::global();
@@ -268,142 +268,25 @@ impl RustCloudBackupManager {
         )
     }
 
-    /// List wallet backups in the current namespace and build detail
-    ///
-    /// Returns None if disabled. On NotFound, re-uploads all wallets automatically.
-    /// On other errors, returns AccessError so the UI can offer a re-upload button
-    pub fn refresh_cloud_backup_detail(&self) -> Option<CloudBackupDetailResult> {
-        if !matches!(*self.state.read(), CloudBackupState::Enabled) {
-            return None;
-        }
-
-        let namespace = match self.current_namespace_id() {
-            Ok(ns) => ns,
-            Err(e) => return Some(CloudBackupDetailResult::AccessError(e.to_string())),
-        };
-
-        let cloud = CloudStorage::global();
-        let wallet_record_ids = match cloud.list_wallet_backups(namespace) {
-            Ok(ids) => ids,
-            Err(CloudStorageError::NotFound(_)) => {
-                info!("No wallet backups found in namespace, re-uploading all wallets");
-                if let Err(e) = self.do_reupload_all_wallets() {
-                    return Some(CloudBackupDetailResult::AccessError(format!(
-                        "Failed to re-upload wallets: {e}"
-                    )));
-                }
-                // try again after re-upload
-                match cloud.list_wallet_backups(self.current_namespace_id().unwrap_or_default()) {
-                    Ok(ids) => ids,
-                    Err(e) => return Some(CloudBackupDetailResult::AccessError(e.to_string())),
-                }
-            }
-            Err(e) => return Some(CloudBackupDetailResult::AccessError(e.to_string())),
-        };
-
-        Some(CloudBackupDetailResult::Success(build_detail_from_wallet_ids(&wallet_record_ids)))
-    }
-
-    /// Download and decrypt wallets that are in the cloud but not on this device
-    pub fn fetch_cloud_only_wallets(&self) -> Vec<CloudBackupWalletItem> {
-        let result = self.do_fetch_cloud_only_wallets();
-        match result {
-            Ok(items) => items,
-            Err(e) => {
-                error!("Failed to fetch cloud-only wallets: {e}");
-                Vec::new()
-            }
-        }
-    }
-
-    /// Restore a single cloud-only wallet to this device
-    ///
-    /// Returns None on success, Some(error) on failure
-    pub fn restore_cloud_wallet(&self, record_id: String) -> Option<String> {
-        self.do_restore_cloud_wallet(&record_id).err().map(|e| e.to_string())
-    }
-
-    /// Delete a single wallet backup from iCloud
-    ///
-    /// Returns None on success, Some(error) on failure
-    pub fn delete_cloud_wallet(&self, record_id: String) -> Option<String> {
-        self.do_delete_cloud_wallet(&record_id).err().map(|e| e.to_string())
-    }
-
-    /// Sync any local wallets that aren't in the cloud backup yet
-    ///
-    /// Called from the iOS sync button on the detail screen
-    pub fn sync_unsynced_wallets(&self) {
-        if !matches!(*self.state.read(), CloudBackupState::Enabled) {
-            return;
-        }
-
-        self.send(Message::StateChanged(CloudBackupState::Enabling));
-
-        let this = CLOUD_BACKUP_MANAGER.clone();
-        cove_tokio::task::spawn_blocking(move || {
-            if let Err(e) = this.do_sync_unsynced_wallets() {
-                error!("Cloud backup sync failed: {e}");
-                this.send(Message::SyncFailed(e.to_string()));
-            }
-            this.send(Message::StateChanged(CloudBackupState::Enabled));
-        });
-    }
-
-    /// Deep verification of cloud backup integrity
-    ///
-    /// Proves the passkey PRF can unwrap the cloud master key, proves the
-    /// master key can decrypt wallet backups, and auto-repairs recoverable
-    /// issues (PRF wrapper, local keychain)
-    pub fn deep_verify_cloud_backup(&self) -> DeepVerificationResult {
-        if !matches!(*self.state.read(), CloudBackupState::Enabled) {
-            return DeepVerificationResult::NotEnabled;
-        }
-
-        let result = match self.do_deep_verify_cloud_backup() {
-            Ok(result) => result,
-            Err(e) => {
-                error!("Deep verification unexpected error: {e}");
-                DeepVerificationResult::Failed(DeepVerificationFailure::Retry {
-                    message: e.to_string(),
-                    detail: None,
-                })
-            }
-        };
-
-        self.persist_verification_result(&result);
-        result
-    }
-
     /// Whether the persisted cloud backup state is unverified
     pub fn is_cloud_backup_unverified(&self) -> bool {
         matches!(Database::global().global_config.cloud_backup(), CloudBackup::Unverified { .. })
     }
 
-    /// Create a new passkey and re-wrap the local master key for cloud storage
+    /// Reset local cloud backup state (keychain + DB) without touching iCloud
     ///
-    /// Recovery action for when the original passkey has been deleted. Proves the
-    /// local master key can decrypt at least one cloud wallet, then creates a new
-    /// passkey, re-encrypts the wrapper, and uploads it. Returns None on success,
-    /// Some(error) on failure
-    pub fn repair_passkey_wrapper(&self) -> Option<String> {
-        self.do_repair_passkey_wrapper().err().map(|e| e.to_string())
-    }
+    /// Debug-only: pair with Swift-side iCloud wipe for full reset
+    pub fn debug_reset_cloud_backup_state(&self) {
+        let keychain = Keychain::global();
+        keychain.delete(NAMESPACE_ID_KEY.to_string());
+        keychain.delete(CREDENTIAL_ID_KEY.to_string());
+        keychain.delete(PRF_SALT_KEY.to_string());
 
-    /// Re-upload all local wallets to the current namespace
-    ///
-    /// Called from the UI when cloud backups are missing (e.g. container mismatch).
-    /// Returns None on success, Some(error) on failure
-    pub fn reupload_all_wallets(&self) -> Option<String> {
-        self.do_reupload_all_wallets().err().map(|e| e.to_string())
-    }
+        let db = Database::global();
+        let _ = db.global_config.set_cloud_backup(&CloudBackup::Disabled);
 
-    /// Delete legacy flat-format backup files from iCloud
-    ///
-    /// Returns None on success, Some(error) on failure
-    pub fn delete_legacy_flat_backup(&self) -> Option<String> {
-        let cloud = CloudStorage::global();
-        cloud.delete_all_flat_files().err().map(|e| e.to_string())
+        self.send(Message::StateChanged(CloudBackupState::Disabled));
+        info!("Debug: reset cloud backup local state");
     }
 
     /// Background startup health check for cloud backup integrity
@@ -440,27 +323,8 @@ impl RustCloudBackupManager {
         };
 
         let cloud = CloudStorage::global();
-        match cloud.has_any_cloud_backup() {
-            Ok(true) => {}
-            Ok(false) => issues.push("backup files not found in iCloud"),
-            Err(e) => {
-                error!("Backup integrity: cloud check failed: {e}");
-                issues.push("could not verify iCloud files");
-            }
-        }
 
-        match cloud.download_master_key_backup(namespace.clone()) {
-            Ok(_) => {}
-            Err(CloudStorageError::NotFound(_)) => {
-                issues.push("master key backup not found in iCloud");
-            }
-            Err(e) => {
-                error!("Backup integrity: master key check failed: {e}");
-                issues.push("could not verify master key backup in iCloud");
-            }
-        }
-
-        // check for unsynced wallets and auto-sync if needed
+        // single cloud call: list wallet backups also proves the namespace exists
         if issues.is_empty() {
             match cloud.list_wallet_backups(namespace) {
                 Ok(wallet_record_ids) => {
@@ -541,6 +405,72 @@ impl RustCloudBackupManager {
 }
 
 impl RustCloudBackupManager {
+    /// List wallet backups in the current namespace and build detail
+    ///
+    /// Returns None if disabled. On NotFound, re-uploads all wallets automatically.
+    /// On other errors, returns AccessError so the UI can offer a re-upload button
+    pub(crate) fn refresh_cloud_backup_detail(&self) -> Option<CloudBackupDetailResult> {
+        let state = self.state.read().clone();
+        if !matches!(state, CloudBackupState::Enabled) {
+            info!("refresh_cloud_backup_detail: skipping, state={state:?}");
+            return None;
+        }
+
+        let namespace = match self.current_namespace_id() {
+            Ok(ns) => ns,
+            Err(e) => return Some(CloudBackupDetailResult::AccessError(e.to_string())),
+        };
+
+        info!("refresh_cloud_backup_detail: listing wallets for namespace {namespace}");
+        let cloud = CloudStorage::global();
+        let wallet_record_ids = match cloud.list_wallet_backups(namespace) {
+            Ok(ids) => ids,
+            Err(CloudStorageError::NotFound(_)) => {
+                info!("No wallet backups found in namespace, re-uploading all wallets");
+                if let Err(e) = self.do_reupload_all_wallets() {
+                    return Some(CloudBackupDetailResult::AccessError(format!(
+                        "Failed to re-upload wallets: {e}"
+                    )));
+                }
+                // try again after re-upload
+                match cloud.list_wallet_backups(self.current_namespace_id().unwrap_or_default()) {
+                    Ok(ids) => ids,
+                    Err(e) => return Some(CloudBackupDetailResult::AccessError(e.to_string())),
+                }
+            }
+            Err(e) => return Some(CloudBackupDetailResult::AccessError(e.to_string())),
+        };
+
+        info!(
+            "refresh_cloud_backup_detail: found {} wallet record(s) in cloud",
+            wallet_record_ids.len()
+        );
+        Some(CloudBackupDetailResult::Success(build_detail_from_wallet_ids(&wallet_record_ids)))
+    }
+
+    /// Deep verification of cloud backup integrity
+    ///
+    /// Checks state, runs do_deep_verify, wraps errors, persists result
+    pub(crate) fn deep_verify_cloud_backup(&self) -> DeepVerificationResult {
+        if !matches!(*self.state.read(), CloudBackupState::Enabled) {
+            return DeepVerificationResult::NotEnabled;
+        }
+
+        let result = match self.do_deep_verify_cloud_backup() {
+            Ok(result) => result,
+            Err(e) => {
+                error!("Deep verification unexpected error: {e}");
+                DeepVerificationResult::Failed(DeepVerificationFailure::Retry {
+                    message: e.to_string(),
+                    detail: None,
+                })
+            }
+        };
+
+        self.persist_verification_result(&result);
+        result
+    }
+
     /// Back up a newly created wallet, fire-and-forget
     ///
     /// Returns immediately if cloud backup isn't enabled (e.g. during restore)
@@ -561,7 +491,7 @@ impl RustCloudBackupManager {
         });
     }
 
-    fn persist_verification_result(&self, result: &DeepVerificationResult) {
+    pub(crate) fn persist_verification_result(&self, result: &DeepVerificationResult) {
         let db = Database::global();
         let current = db.global_config.cloud_backup();
 
@@ -586,7 +516,7 @@ impl RustCloudBackupManager {
         }
     }
 
-    fn do_repair_passkey_wrapper(&self) -> Result<(), CloudBackupError> {
+    pub(crate) fn do_repair_passkey_wrapper(&self) -> Result<(), CloudBackupError> {
         let keychain = Keychain::global();
         let cspp = cove_cspp::Cspp::new(keychain.clone());
         let cloud = CloudStorage::global();
@@ -676,7 +606,9 @@ impl RustCloudBackupManager {
         Ok(())
     }
 
-    fn do_deep_verify_cloud_backup(&self) -> Result<DeepVerificationResult, CloudBackupError> {
+    pub(crate) fn do_deep_verify_cloud_backup(
+        &self,
+    ) -> Result<DeepVerificationResult, CloudBackupError> {
         let keychain = Keychain::global();
         let cspp = cove_cspp::Cspp::new(keychain.clone());
         let cloud = CloudStorage::global();
@@ -1018,7 +950,8 @@ impl RustCloudBackupManager {
         let critical_key = Zeroizing::new(master_key.critical_data_key());
         let cloud = CloudStorage::global();
 
-        for metadata in wallets {
+        for (i, metadata) in wallets.iter().enumerate() {
+            info!("Backup: uploading wallet {}/{} '{}'", i + 1, wallets.len(), metadata.name);
             let entry = build_wallet_entry(metadata, metadata.wallet_mode)?;
             let encrypted = wallet_crypto::encrypt_wallet_entry(&entry, &critical_key)
                 .map_err_str(CloudBackupError::Crypto)?;
@@ -1030,8 +963,10 @@ impl RustCloudBackupManager {
             cloud
                 .upload_wallet_backup(namespace.clone(), record_id, wallet_json)
                 .map_err_str(CloudBackupError::Cloud)?;
+            info!("Backup: wallet {}/{} uploaded", i + 1, wallets.len());
         }
 
+        info!("Backup: listing wallet backups to verify");
         let wallet_record_ids =
             cloud.list_wallet_backups(namespace).map_err_str(CloudBackupError::Cloud)?;
         let wallet_count = wallet_record_ids.len() as u32;
@@ -1048,8 +983,9 @@ impl RustCloudBackupManager {
         Ok(())
     }
 
-    fn do_sync_unsynced_wallets(&self) -> Result<(), CloudBackupError> {
+    pub(crate) fn do_sync_unsynced_wallets(&self) -> Result<(), CloudBackupError> {
         let namespace = self.current_namespace_id()?;
+        info!("Sync: listing cloud wallet backups for namespace {namespace}");
         let cloud = CloudStorage::global();
         let cloud_record_ids: std::collections::HashSet<_> = cloud
             .list_wallet_backups(namespace)
@@ -1057,6 +993,7 @@ impl RustCloudBackupManager {
             .into_iter()
             .collect();
 
+        info!("Sync: found {} wallet(s) in cloud", cloud_record_ids.len());
         let db = Database::global();
         let unsynced: Vec<_> = all_local_wallets(&db)
             .into_iter()
@@ -1064,13 +1001,17 @@ impl RustCloudBackupManager {
             .collect();
 
         if unsynced.is_empty() {
+            info!("Sync: all wallets already synced");
             return Ok(());
         }
 
+        info!("Sync: {} wallet(s) need backup", unsynced.len());
         self.do_backup_wallets(&unsynced)
     }
 
-    fn do_fetch_cloud_only_wallets(&self) -> Result<Vec<CloudBackupWalletItem>, CloudBackupError> {
+    pub(crate) fn do_fetch_cloud_only_wallets(
+        &self,
+    ) -> Result<Vec<CloudBackupWalletItem>, CloudBackupError> {
         let namespace = self.current_namespace_id()?;
         let cloud = CloudStorage::global();
         let wallet_record_ids =
@@ -1144,7 +1085,7 @@ impl RustCloudBackupManager {
         Ok(items)
     }
 
-    fn do_restore_cloud_wallet(&self, record_id: &str) -> Result<(), CloudBackupError> {
+    pub(crate) fn do_restore_cloud_wallet(&self, record_id: &str) -> Result<(), CloudBackupError> {
         let namespace = self.current_namespace_id()?;
         let cloud = CloudStorage::global();
         let cspp = cove_cspp::Cspp::new(Keychain::global().clone());
@@ -1172,7 +1113,7 @@ impl RustCloudBackupManager {
         Ok(())
     }
 
-    fn do_delete_cloud_wallet(&self, record_id: &str) -> Result<(), CloudBackupError> {
+    pub(crate) fn do_delete_cloud_wallet(&self, record_id: &str) -> Result<(), CloudBackupError> {
         let namespace = self.current_namespace_id()?;
         let cloud = CloudStorage::global();
 
@@ -1203,7 +1144,7 @@ impl RustCloudBackupManager {
     /// Re-upload all local wallets to cloud
     ///
     /// Reuses the master key from keychain (no passkey interaction needed)
-    fn do_reupload_all_wallets(&self) -> Result<(), CloudBackupError> {
+    pub(crate) fn do_reupload_all_wallets(&self) -> Result<(), CloudBackupError> {
         info!("Re-uploading all wallets to cloud");
 
         let namespace = self.current_namespace_id()?;
@@ -1219,7 +1160,7 @@ impl RustCloudBackupManager {
         upload_all_wallets(cloud, &namespace, &critical_key, &db)
     }
 
-    fn do_enable_cloud_backup(&self) -> Result<(), CloudBackupError> {
+    pub(crate) fn do_enable_cloud_backup(&self) -> Result<(), CloudBackupError> {
         self.send(Message::StateChanged(CloudBackupState::Enabling));
 
         let passkey = PasskeyAccess::global();
@@ -1230,16 +1171,18 @@ impl RustCloudBackupManager {
         }
 
         // get or create local master key
+        info!("Enable: getting master key");
         let cspp = cove_cspp::Cspp::new(Keychain::global().clone());
         let master_key = cspp
             .get_or_create_master_key()
             .map_err_prefix("master key", CloudBackupError::Internal)?;
 
         let namespace_id = master_key.namespace_id();
+        info!("Enable: namespace_id={namespace_id}, creating passkey");
         let keychain = Keychain::global();
         let (prf_key, prf_salt) = obtain_prf_key(keychain, passkey)?;
 
-        // encrypt and upload master key
+        info!("Enable: passkey created, encrypting master key");
         let encrypted_master =
             master_key_crypto::encrypt_master_key(&master_key, &prf_key, &prf_salt)
                 .map_err_str(CloudBackupError::Crypto)?;
@@ -1247,16 +1190,18 @@ impl RustCloudBackupManager {
         let master_json =
             serde_json::to_vec(&encrypted_master).map_err_str(CloudBackupError::Internal)?;
 
+        info!("Enable: uploading master key");
         let cloud = CloudStorage::global();
         cloud
             .upload_master_key_backup(namespace_id.clone(), master_json)
             .map_err_str(CloudBackupError::Cloud)?;
 
+        info!("Enable: master key uploaded, uploading wallets");
         let critical_key = Zeroizing::new(master_key.critical_data_key());
         let db = Database::global();
         upload_all_wallets(cloud, &namespace_id, &critical_key, &db)?;
 
-        // persist namespace after all uploads succeed
+        info!("Enable: wallets uploaded, persisting state");
         keychain
             .save(NAMESPACE_ID_KEY.into(), namespace_id)
             .map_err_prefix("save namespace_id", CloudBackupError::Internal)?;
@@ -1447,7 +1392,7 @@ impl RustCloudBackupManager {
 }
 
 /// Build a CloudBackupDetail from wallet record IDs by comparing against local wallets
-fn build_detail_from_wallet_ids(wallet_record_ids: &[String]) -> CloudBackupDetail {
+pub(crate) fn build_detail_from_wallet_ids(wallet_record_ids: &[String]) -> CloudBackupDetail {
     let db = Database::global();
     let last_sync = match db.global_config.cloud_backup() {
         CloudBackup::Enabled { last_sync, .. } | CloudBackup::Unverified { last_sync, .. } => {
@@ -1742,7 +1687,7 @@ fn restore_single_wallet(
     let backup_model = crate::backup::model::WalletBackup {
         metadata: entry.metadata.clone(),
         secret: convert_cloud_secret(&entry.secret),
-        descriptors: entry.descriptors.as_ref().map(|d| crate::backup::model::DescriptorPair {
+        descriptors: entry.descriptors.as_ref().map(|d| LocalDescriptorPair {
             external: d.external.clone(),
             internal: d.internal.clone(),
         }),
@@ -1751,7 +1696,7 @@ fn restore_single_wallet(
     };
 
     match &backup_model.secret {
-        crate::backup::model::WalletSecret::Mnemonic(words) => {
+        LocalWalletSecret::Mnemonic(words) => {
             let mnemonic = bip39::Mnemonic::from_str(words)
                 .map_err_prefix("invalid mnemonic", CloudBackupError::Internal)?;
 
@@ -1823,17 +1768,11 @@ fn obtain_prf_key(
     Ok((prf_key, prf_salt))
 }
 
-fn convert_cloud_secret(
-    secret: &cove_cspp::backup_data::WalletSecret,
-) -> crate::backup::model::WalletSecret {
+fn convert_cloud_secret(secret: &CloudWalletSecret) -> LocalWalletSecret {
     match secret {
-        WalletSecret::Mnemonic(m) => crate::backup::model::WalletSecret::Mnemonic(m.clone()),
-        WalletSecret::TapSignerBackup(b) => {
-            crate::backup::model::WalletSecret::TapSignerBackup(b.clone())
-        }
-        WalletSecret::Descriptor(_) | WalletSecret::WatchOnly => {
-            crate::backup::model::WalletSecret::None
-        }
+        CloudWalletSecret::Mnemonic(m) => LocalWalletSecret::Mnemonic(m.clone()),
+        CloudWalletSecret::TapSignerBackup(b) => LocalWalletSecret::TapSignerBackup(b.clone()),
+        CloudWalletSecret::Descriptor(_) | CloudWalletSecret::WatchOnly => LocalWalletSecret::None,
     }
 }
 
@@ -1847,7 +1786,7 @@ fn build_wallet_entry(
 
     let secret = match metadata.wallet_type {
         WalletType::Hot => match keychain.get_wallet_key(id) {
-            Ok(Some(mnemonic)) => WalletSecret::Mnemonic(mnemonic.to_string()),
+            Ok(Some(mnemonic)) => CloudWalletSecret::Mnemonic(mnemonic.to_string()),
             Ok(None) => {
                 return Err(CloudBackupError::Internal(format!(
                     "hot wallet '{name}' has no mnemonic"
@@ -1859,16 +1798,17 @@ fn build_wallet_entry(
                 )));
             }
         },
+
         WalletType::Cold => {
             let is_tap_signer =
                 metadata.hardware_metadata.as_ref().is_some_and(|hw| hw.is_tap_signer());
 
             if is_tap_signer {
                 match keychain.get_tap_signer_backup(id) {
-                    Ok(Some(backup)) => WalletSecret::TapSignerBackup(backup),
+                    Ok(Some(backup)) => CloudWalletSecret::TapSignerBackup(backup),
                     Ok(None) => {
                         warn!("Tap signer wallet '{name}' has no backup, exporting without it");
-                        WalletSecret::WatchOnly
+                        CloudWalletSecret::WatchOnly
                     }
                     Err(e) => {
                         return Err(CloudBackupError::Internal(format!(
@@ -1877,10 +1817,10 @@ fn build_wallet_entry(
                     }
                 }
             } else {
-                WalletSecret::WatchOnly
+                CloudWalletSecret::WatchOnly
             }
         }
-        WalletType::XpubOnly | WalletType::WatchOnly => WalletSecret::WatchOnly,
+        WalletType::XpubOnly | WalletType::WatchOnly => CloudWalletSecret::WatchOnly,
     };
 
     let xpub = match keychain.get_wallet_xpub(id) {
@@ -1925,7 +1865,10 @@ fn build_wallet_entry(
 
 /// Wipe all local encrypted databases (main db + per-wallet databases)
 ///
-/// Used during "Start Fresh" flows. Shared across platforms via FFI.
+/// Callers:
+///   - iOS: CatastrophicErrorView ("Start Fresh" recovery)
+///   - iOS: AboutScreen debug wipe (DEBUG + beta only, paired with cloud wipe)
+///
 /// Removes both current encrypted filenames and legacy plaintext filenames
 #[uniffi::export]
 pub fn wipe_local_data() {
@@ -1998,36 +1941,31 @@ fn delete_all_wallet_keychain_items() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cove_cspp::backup_data::WalletSecret;
 
     #[test]
     fn convert_cloud_secret_mnemonic() {
-        let secret = WalletSecret::Mnemonic("abandon".into());
+        let secret = CloudWalletSecret::Mnemonic("abandon".into());
         let result = convert_cloud_secret(&secret);
-        assert!(
-            matches!(result, crate::backup::model::WalletSecret::Mnemonic(ref m) if m == "abandon")
-        );
+        assert!(matches!(result, LocalWalletSecret::Mnemonic(ref m) if m == "abandon"));
     }
 
     #[test]
     fn convert_cloud_secret_tap_signer() {
-        let secret = WalletSecret::TapSignerBackup(vec![1, 2, 3]);
+        let secret = CloudWalletSecret::TapSignerBackup(vec![1, 2, 3]);
         let result = convert_cloud_secret(&secret);
-        assert!(
-            matches!(result, crate::backup::model::WalletSecret::TapSignerBackup(ref b) if b == &[1, 2, 3])
-        );
+        assert!(matches!(result, LocalWalletSecret::TapSignerBackup(ref b) if b == &[1, 2, 3]));
     }
 
     #[test]
     fn convert_cloud_secret_descriptor_to_none() {
-        let secret = WalletSecret::Descriptor("wpkh(...)".into());
+        let secret = CloudWalletSecret::Descriptor("wpkh(...)".into());
         let result = convert_cloud_secret(&secret);
-        assert!(matches!(result, crate::backup::model::WalletSecret::None));
+        assert!(matches!(result, LocalWalletSecret::None));
     }
 
     #[test]
     fn convert_cloud_secret_watch_only_to_none() {
-        let result = convert_cloud_secret(&WalletSecret::WatchOnly);
-        assert!(matches!(result, crate::backup::model::WalletSecret::None));
+        let result = convert_cloud_secret(&CloudWalletSecret::WatchOnly);
+        assert!(matches!(result, LocalWalletSecret::None));
     }
 }

@@ -1,31 +1,24 @@
 import SwiftUI
 
 struct CloudBackupDetailScreen: View {
-    @State private var detail: CloudBackupDetail?
-    @State private var isSyncing = false
-    @State private var syncError: String?
-    @State private var cloudOnlyWallets: [CloudBackupWalletItem]?
-    @State private var isLoadingCloudOnly = false
+    @State private var manager = CloudBackupDetailManager()
     @State private var syncHealth: ICloudDriveHelper.SyncHealth = .noFiles
-
-    @State private var verificationReport: DeepVerificationReport?
-    @State private var verificationFailure: DeepVerificationFailure?
-    @State private var isVerifying = false
-    @State private var hasStartedVerification = false
-    @State private var isRecreatingManifest = false
-    @State private var isReinitializingBackup = false
-    @State private var isRepairingPasskey = false
-    @State private var recoveryError: String?
-    @State private var userCancelledVerification = false
-
     @State private var showRecreateConfirmation = false
     @State private var showReinitializeConfirmation = false
 
+    private var isVerifying: Bool {
+        if case .verifying = manager.verification { return true }
+        return false
+    }
+
+    private var isRecovering: Bool {
+        if case .recovering = manager.recovery { return true }
+        return false
+    }
+
     var body: some View {
         Form {
-            if isVerifying, verificationReport == nil, verificationFailure == nil,
-               !userCancelledVerification
-            {
+            if isVerifying, !hasVerificationResult {
                 Section {
                     VStack {
                         ProgressView("Verifying cloud backup...")
@@ -33,60 +26,30 @@ struct CloudBackupDetailScreen: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 }
-            } else if let detail, !userCancelledVerification {
+            } else if let detail = manager.detail, !isCancelled {
                 DetailFormContent(
                     detail: detail,
                     syncHealth: syncHealth,
-                    isSyncing: $isSyncing,
-                    syncError: $syncError,
-                    cloudOnlyWallets: $cloudOnlyWallets,
-                    isLoadingCloudOnly: $isLoadingCloudOnly,
-                    onCloudOnlyChanged: { Task { await refreshDetailOnly() } }
+                    manager: manager
                 )
             }
 
             VerificationSection(
-                report: verificationReport,
-                failure: verificationFailure,
-                userCancelled: userCancelledVerification,
-                isVerifying: isVerifying,
-                isRecreatingManifest: isRecreatingManifest,
-                isReinitializingBackup: isReinitializingBackup,
-                isRepairingPasskey: isRepairingPasskey,
-                recoveryError: recoveryError,
-                onVerify: { startDeepVerification() },
+                manager: manager,
                 onRecreate: { showRecreateConfirmation = true },
-                onReinitialize: { showReinitializeConfirmation = true },
-                onRepairPasskey: { repairPasskey() }
+                onReinitialize: { showReinitializeConfirmation = true }
             )
         }
         .navigationTitle("Cloud Backup")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            startDeepVerificationIfNeeded()
+            manager.dispatch(.startVerification)
         }
-        .onChange(of: CloudBackupManager.shared.state) { _, newState in
-            if isSyncing, newState != .enabling {
-                Task { await refreshDetailOnly() }
-                isSyncing = false
-            }
-
-            if isReinitializingBackup {
-                switch newState {
-                case .enabled:
-                    isReinitializingBackup = false
-                    startDeepVerification()
-                case let .error(message):
-                    isReinitializingBackup = false
-                    recoveryError = message
-                default:
-                    break
-                }
-            }
+        .onChange(of: manager.detail) { _, _ in
+            syncHealth = ICloudDriveHelper.shared.overallSyncHealth()
         }
-        .onChange(of: CloudBackupManager.shared.syncError) { _, error in
-            syncError = error
-            CloudBackupManager.shared.syncError = nil
+        .onChange(of: manager.verification) { _, _ in
+            syncHealth = ICloudDriveHelper.shared.overallSyncHealth()
         }
         .confirmationDialog(
             "Recreate Backup Index",
@@ -94,7 +57,7 @@ struct CloudBackupDetailScreen: View {
             titleVisibility: .visible
         ) {
             Button("Recreate", role: .destructive) {
-                recreateManifest()
+                manager.dispatch(.recreateManifest)
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -108,7 +71,7 @@ struct CloudBackupDetailScreen: View {
             titleVisibility: .visible
         ) {
             Button("Reinitialize", role: .destructive) {
-                reinitializeBackup()
+                manager.dispatch(.reinitializeBackup)
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -118,152 +81,45 @@ struct CloudBackupDetailScreen: View {
         }
     }
 
-    private func startDeepVerificationIfNeeded() {
-        guard !hasStartedVerification else { return }
-        startDeepVerification()
-    }
-
-    private func startDeepVerification() {
-        guard !isRecreatingManifest, !isReinitializingBackup, !isRepairingPasskey else { return }
-
-        hasStartedVerification = true
-        isVerifying = true
-        verificationReport = nil
-        verificationFailure = nil
-        recoveryError = nil
-        userCancelledVerification = false
-
-        Task {
-            let result = await Task.detached {
-                CloudBackupManager.shared.rust.deepVerifyCloudBackup()
-            }.value
-
-            isVerifying = false
-
-            switch result {
-            case let .verified(report):
-                verificationReport = report
-                verificationFailure = nil
-                if let reportDetail = report.detail {
-                    detail = reportDetail
-                }
-            case let .userCancelled(cancelDetail):
-                verificationReport = nil
-                verificationFailure = nil
-                userCancelledVerification = true
-                if let cancelDetail {
-                    detail = cancelDetail
-                }
-            case .notEnabled:
-                break
-            case let .failed(failure):
-                verificationFailure = failure
-                verificationReport = nil
-                if let failureDetail = extractDetail(from: failure) {
-                    detail = failureDetail
-                }
-            }
-
-            syncHealth = ICloudDriveHelper.shared.overallSyncHealth()
+    private var hasVerificationResult: Bool {
+        switch manager.verification {
+        case .verified, .failed, .cancelled: true
+        default: false
         }
     }
 
-    private func recreateManifest() {
-        isRecreatingManifest = true
-        recoveryError = nil
-
-        Task {
-            let error = await Task.detached {
-                CloudBackupManager.shared.rust.reuploadAllWallets()
-            }.value
-
-            if let error {
-                recoveryError = error
-                isRecreatingManifest = false
-                return
-            }
-
-            isRecreatingManifest = false
-            startDeepVerification()
-        }
-    }
-
-    private func reinitializeBackup() {
-        isReinitializingBackup = true
-        recoveryError = nil
-        CloudBackupManager.shared.rust.enableCloudBackup()
-    }
-
-    private func repairPasskey() {
-        isRepairingPasskey = true
-        recoveryError = nil
-
-        Task {
-            let error = await Task.detached {
-                CloudBackupManager.shared.rust.repairPasskeyWrapper()
-            }.value
-
-            if let error {
-                recoveryError = error
-                isRepairingPasskey = false
-                return
-            }
-
-            isRepairingPasskey = false
-            startDeepVerification()
-        }
-    }
-
-    private func refreshDetailOnly() async {
-        let result = await Task.detached {
-            CloudBackupManager.shared.rust.refreshCloudBackupDetail()
-        }.value
-
-        guard let result else { return }
-
-        switch result {
-        case let .success(refreshedDetail):
-            detail = refreshedDetail
-        case .accessError:
-            break
-        }
-
-        syncHealth = ICloudDriveHelper.shared.overallSyncHealth()
-    }
-
-    private func extractDetail(from failure: DeepVerificationFailure) -> CloudBackupDetail? {
-        switch failure {
-        case let .retry(_, detail),
-             let .recreateManifest(_, detail, _),
-             let .reinitializeBackup(_, detail, _),
-             let .unsupportedVersion(_, detail):
-            detail
-        }
+    private var isCancelled: Bool {
+        if case .cancelled = manager.verification { return true }
+        return false
     }
 }
 
 // MARK: - Verification Section
 
 private struct VerificationSection: View {
-    let report: DeepVerificationReport?
-    let failure: DeepVerificationFailure?
-    let userCancelled: Bool
-    let isVerifying: Bool
-    let isRecreatingManifest: Bool
-    let isReinitializingBackup: Bool
-    let isRepairingPasskey: Bool
-    let recoveryError: String?
-    let onVerify: () -> Void
+    let manager: CloudBackupDetailManager
     let onRecreate: () -> Void
     let onReinitialize: () -> Void
-    let onRepairPasskey: () -> Void
+
+    private var isVerifying: Bool {
+        if case .verifying = manager.verification { return true }
+        return false
+    }
 
     private var isRecovering: Bool {
-        isRecreatingManifest || isReinitializingBackup || isRepairingPasskey
+        if case .recovering = manager.recovery { return true }
+        return false
+    }
+
+    private var isBusy: Bool {
+        isVerifying || isRecovering
     }
 
     var body: some View {
-        if isVerifying {
+        switch manager.verification {
+        case .idle:
+            EmptyView()
+        case .verifying:
             Section {
                 HStack {
                     ProgressView()
@@ -271,11 +127,11 @@ private struct VerificationSection: View {
                     Text("Verifying backup integrity...")
                 }
             }
-        } else if let report {
+        case let .verified(report):
             verifiedSection(report)
-        } else if let failure {
+        case let .failed(failure):
             failureSection(failure)
-        } else if userCancelled {
+        case .cancelled:
             cancelledSection
         }
     }
@@ -295,11 +151,11 @@ private struct VerificationSection: View {
             .foregroundStyle(.secondary)
 
             Button {
-                onVerify()
+                manager.dispatch(.startVerification)
             } label: {
                 Label("Verify Now", systemImage: "checkmark.shield")
             }
-            .disabled(isRecovering)
+            .disabled(isBusy)
 
             repairPasskeyButton
         }
@@ -310,6 +166,7 @@ private struct VerificationSection: View {
         Section {
             Label("Backup verified", systemImage: "checkmark.shield.fill")
                 .foregroundStyle(.green)
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
 
             if report.masterKeyWrapperRepaired {
                 Label(
@@ -354,7 +211,7 @@ private struct VerificationSection: View {
             }
         }
 
-        verifyButton
+        actionButtons
     }
 
     @ViewBuilder
@@ -379,7 +236,7 @@ private struct VerificationSection: View {
                 Button(role: .destructive) {
                     onRecreate()
                 } label: {
-                    if isRecreatingManifest {
+                    if isRecovering {
                         HStack {
                             ProgressView()
                                 .padding(.trailing, 4)
@@ -389,7 +246,7 @@ private struct VerificationSection: View {
                         Label("Recreate Backup Index", systemImage: "arrow.clockwise")
                     }
                 }
-                .disabled(isVerifying || isRecovering)
+                .disabled(isBusy)
 
             case let .reinitializeBackup(message, _, warning):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -402,7 +259,7 @@ private struct VerificationSection: View {
                 Button(role: .destructive) {
                     onReinitialize()
                 } label: {
-                    if isReinitializingBackup {
+                    if isRecovering {
                         HStack {
                             ProgressView()
                                 .padding(.trailing, 4)
@@ -412,7 +269,7 @@ private struct VerificationSection: View {
                         Label("Reinitialize Cloud Backup", systemImage: "arrow.counterclockwise")
                     }
                 }
-                .disabled(isVerifying || isRecovering)
+                .disabled(isBusy)
 
             case let .unsupportedVersion(message, _):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -424,40 +281,70 @@ private struct VerificationSection: View {
             }
         }
 
-        if let recoveryError {
+        if case let .failed(action: _, error) = manager.recovery {
             Section {
-                Label(recoveryError, systemImage: "xmark.circle.fill")
+                Label(error, systemImage: "xmark.circle.fill")
                     .foregroundStyle(.red)
                     .font(.caption)
             }
         }
     }
 
-    private var verifyButton: some View {
+    private var actionButtons: some View {
         Section {
+            if manager.detail?.notBackedUp.isEmpty == false {
+                syncButton
+            }
+
             Button {
-                onVerify()
+                manager.dispatch(.startVerification)
             } label: {
                 Label("Verify Again", systemImage: "checkmark.shield")
             }
-            .disabled(isVerifying || isRecovering)
+            .disabled(isBusy)
+        }
+    }
+
+    private var syncButton: some View {
+        Group {
+            Button {
+                manager.dispatch(.syncUnsynced)
+            } label: {
+                HStack {
+                    if case .syncing = manager.sync {
+                        ProgressView()
+                            .padding(.trailing, 8)
+                        Text("Syncing...")
+                    } else {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Sync Now")
+                    }
+                }
+            }
+            .disabled(manager.sync == .syncing)
+
+            if case let .failed(error) = manager.sync {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
     }
 
     private var retryButton: some View {
         Button {
-            onVerify()
+            manager.dispatch(.startVerification)
         } label: {
             Label("Try Again", systemImage: "arrow.clockwise")
         }
-        .disabled(isVerifying || isRecovering)
+        .disabled(isBusy)
     }
 
     private var repairPasskeyButton: some View {
         Button {
-            onRepairPasskey()
+            manager.dispatch(.repairPasskey)
         } label: {
-            if isRepairingPasskey {
+            if isRecovering {
                 HStack {
                     ProgressView()
                         .padding(.trailing, 4)
@@ -467,7 +354,7 @@ private struct VerificationSection: View {
                 Label("Create New Passkey", systemImage: "person.badge.key")
             }
         }
-        .disabled(isVerifying || isRecovering)
+        .disabled(isBusy)
     }
 }
 
@@ -476,26 +363,24 @@ private struct VerificationSection: View {
 private struct DetailFormContent: View {
     let detail: CloudBackupDetail
     let syncHealth: ICloudDriveHelper.SyncHealth
-    @Binding var isSyncing: Bool
-    @Binding var syncError: String?
-    @Binding var cloudOnlyWallets: [CloudBackupWalletItem]?
-    @Binding var isLoadingCloudOnly: Bool
-    var onCloudOnlyChanged: () -> Void = {}
+    let manager: CloudBackupDetailManager
+
+    private var showCloudOnlySection: Bool {
+        switch manager.cloudOnly {
+        case .notFetched: detail.cloudOnlyCount > 0
+        case .loading: true
+        case let .loaded(wallets): !wallets.isEmpty
+        }
+    }
 
     var body: some View {
         HeaderSection(lastSync: detail.lastSync, syncHealth: syncHealth)
         if !detail.backedUp.isEmpty { BackedUpSections(wallets: detail.backedUp) }
         if !detail.notBackedUp.isEmpty {
             NotBackedUpSections(wallets: detail.notBackedUp)
-            SyncSection(isSyncing: $isSyncing, syncError: $syncError)
         }
-        if detail.cloudOnlyCount > 0 || cloudOnlyWallets?.isEmpty == false {
-            CloudOnlySection(
-                count: detail.cloudOnlyCount,
-                wallets: $cloudOnlyWallets,
-                isLoading: $isLoadingCloudOnly,
-                onChanged: onCloudOnlyChanged
-            )
+        if showCloudOnlySection {
+            CloudOnlySection(manager: manager)
         }
     }
 }
@@ -576,63 +461,44 @@ private struct HeaderSection: View {
     }
 }
 
-// MARK: - Sync Section
-
-private struct SyncSection: View {
-    @Binding var isSyncing: Bool
-    @Binding var syncError: String?
-
-    var body: some View {
-        Section {
-            Button {
-                syncError = nil
-                isSyncing = true
-                CloudBackupManager.shared.rust.syncUnsyncedWallets()
-            } label: {
-                HStack {
-                    if isSyncing {
-                        ProgressView()
-                            .padding(.trailing, 8)
-                        Text("Syncing...")
-                    } else {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text("Sync Now")
-                    }
-                }
-            }
-            .disabled(isSyncing)
-
-            if let syncError {
-                Text(syncError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-        }
-    }
-}
-
 // MARK: - Cloud Only Section
 
 private struct CloudOnlySection: View {
-    let count: UInt32
-    @Binding var wallets: [CloudBackupWalletItem]?
-    @Binding var isLoading: Bool
-    var onChanged: () -> Void = {}
-
-    @State private var operatingOn: String?
-    @State private var operationError: String?
+    let manager: CloudBackupDetailManager
     @State private var selectedWallet: CloudBackupWalletItem?
     @State private var walletToDelete: CloudBackupWalletItem?
 
+    private var isOperating: Bool {
+        if case .operating = manager.cloudOnlyOperation { return true }
+        return false
+    }
+
+    private var operatingRecordId: String? {
+        if case let .operating(recordId) = manager.cloudOnlyOperation { return recordId }
+        return nil
+    }
+
     var body: some View {
         Section(header: Text("Not on This Device")) {
-            if let wallets {
+            switch manager.cloudOnly {
+            case .notFetched, .loading:
+                HStack {
+                    ProgressView()
+                        .padding(.trailing, 8)
+                    Text("Loading...")
+                }
+                .foregroundStyle(.secondary)
+                .task {
+                    manager.dispatch(.fetchCloudOnly)
+                }
+
+            case let .loaded(wallets):
                 ForEach(wallets, id: \.name) { item in
                     Button {
                         selectedWallet = item
                     } label: {
                         HStack {
-                            if operatingOn == item.recordId {
+                            if operatingRecordId == item.recordId {
                                 ProgressView()
                                     .padding(.trailing, 8)
                             }
@@ -640,43 +506,14 @@ private struct CloudOnlySection: View {
                         }
                     }
                     .foregroundStyle(.primary)
-                    .disabled(operatingOn != nil)
+                    .disabled(isOperating)
                 }
 
-                if let operationError {
-                    Text(operationError)
+                if case let .failed(error) = manager.cloudOnlyOperation {
+                    Text(error)
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
-            } else {
-                HStack {
-                    Image(systemName: "icloud.and.arrow.down")
-                    Text("\(count) wallet(s) in cloud not on this device")
-                }
-                .foregroundStyle(.secondary)
-
-                Button {
-                    isLoading = true
-                    Task.detached {
-                        let items = CloudBackupManager.shared.rust.fetchCloudOnlyWallets()
-                        await MainActor.run {
-                            wallets = items
-                            isLoading = false
-                        }
-                    }
-                } label: {
-                    HStack {
-                        if isLoading {
-                            ProgressView()
-                                .padding(.trailing, 8)
-                            Text("Loading...")
-                        } else {
-                            Image(systemName: "info.circle")
-                            Text("Get More Info")
-                        }
-                    }
-                }
-                .disabled(isLoading)
             }
         }
         .confirmationDialog(
@@ -689,7 +526,7 @@ private struct CloudOnlySection: View {
         ) {
             if let item = selectedWallet, let recordId = item.recordId {
                 Button("Restore to This Device") {
-                    restoreWallet(recordId: recordId, name: item.name)
+                    manager.dispatch(.restoreCloudWallet(recordId: recordId))
                 }
                 Button("Delete from iCloud", role: .destructive) {
                     walletToDelete = item
@@ -706,52 +543,12 @@ private struct CloudOnlySection: View {
         ) {
             if let item = walletToDelete, let recordId = item.recordId {
                 Button("Delete", role: .destructive) {
-                    deleteWallet(recordId: recordId, name: item.name)
+                    manager.dispatch(.deleteCloudWallet(recordId: recordId))
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This wallet backup will be permanently removed from iCloud")
-        }
-    }
-
-    private func restoreWallet(recordId: String, name: String) {
-        operatingOn = recordId
-        operationError = nil
-
-        Task {
-            let error = await Task.detached {
-                CloudBackupManager.shared.rust.restoreCloudWallet(recordId: recordId)
-            }.value
-
-            if let error {
-                operationError = "Restore \(name): \(error)"
-            } else {
-                wallets?.removeAll { $0.recordId == recordId }
-                if wallets?.isEmpty == true { wallets = nil }
-                onChanged()
-            }
-            operatingOn = nil
-        }
-    }
-
-    private func deleteWallet(recordId: String, name: String) {
-        operatingOn = recordId
-        operationError = nil
-
-        Task {
-            let error = await Task.detached {
-                CloudBackupManager.shared.rust.deleteCloudWallet(recordId: recordId)
-            }.value
-
-            if let error {
-                operationError = "Delete \(name): \(error)"
-            } else {
-                wallets?.removeAll { $0.recordId == recordId }
-                if wallets?.isEmpty == true { wallets = nil }
-                onChanged()
-            }
-            operatingOn = nil
         }
     }
 }

@@ -18,6 +18,7 @@ final class CloudBackupManager: AnyReconciler, CloudBackupManagerReconciler, @un
     var syncError: String?
     var hasPendingUploadVerification = false
     var showExistingBackupWarning = false
+    var showPasskeyChoiceDialog = false
 
     private init() {
         let rust = RustCloudBackupManager()
@@ -43,7 +44,15 @@ final class CloudBackupManager: AnyReconciler, CloudBackupManagerReconciler, @un
         case let .pendingUploadVerificationChanged(pending):
             hasPendingUploadVerification = pending
         case .existingBackupFound:
-            showExistingBackupWarning = true
+            // delay to let the system passkey sheet finish dismissing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                self?.showExistingBackupWarning = true
+            }
+        case .passkeyDiscoveryCancelled:
+            // delay to let the system passkey sheet finish dismissing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                self?.showPasskeyChoiceDialog = true
+            }
         }
     }
 

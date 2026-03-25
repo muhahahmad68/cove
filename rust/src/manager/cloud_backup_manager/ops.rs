@@ -8,7 +8,7 @@ use tracing::{info, warn};
 use zeroize::Zeroizing;
 
 use super::wallets::{
-    NamespaceMatchOutcome, all_local_wallets, discover_or_create_prf_key,
+    NamespaceMatchOutcome, all_local_wallets, discover_or_create_prf_key, obtain_prf_key,
     persist_enabled_cloud_backup_state, restore_single_wallet, try_match_namespace_with_passkey,
     upload_all_wallets,
 };
@@ -265,8 +265,15 @@ impl RustCloudBackupManager {
                 self.complete_recovery(keychain, cloud, &cspp, matched)
             }
 
-            NamespaceMatchOutcome::UserDeclined | NamespaceMatchOutcome::NoMatch => {
-                info!("Enable: existing backups found but not recovered, asking user to confirm");
+            NamespaceMatchOutcome::UserDeclined => {
+                info!("Enable: user cancelled passkey picker during namespace matching");
+                self.send(Message::PasskeyDiscoveryCancelled);
+                self.send(Message::StateChanged(CloudBackupState::Disabled));
+                Ok(())
+            }
+
+            NamespaceMatchOutcome::NoMatch => {
+                info!("Enable: passkey didn't match existing backups, asking user to confirm");
                 self.send(Message::ExistingBackupFound);
                 self.send(Message::StateChanged(CloudBackupState::Disabled));
                 Ok(())
@@ -347,7 +354,15 @@ impl RustCloudBackupManager {
 
         let namespace_id = master_key.namespace_id();
         info!("Enable: namespace_id={namespace_id}, getting passkey");
-        let (prf_key, prf_salt) = discover_or_create_prf_key(keychain, passkey)?;
+        let (prf_key, prf_salt) = match discover_or_create_prf_key(keychain, passkey) {
+            Ok(result) => result,
+            Err(CloudBackupError::PasskeyDiscoveryCancelled) => {
+                self.send(Message::PasskeyDiscoveryCancelled);
+                self.send(Message::StateChanged(CloudBackupState::Disabled));
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        };
 
         info!("Enable: passkey created, encrypting master key");
         let encrypted_master =
@@ -382,6 +397,59 @@ impl RustCloudBackupManager {
         self.send(Message::StateChanged(CloudBackupState::Enabled));
 
         info!("Cloud backup enabled successfully");
+        Ok(())
+    }
+
+    /// Same as `do_enable_cloud_backup_create_new` but skips passkey discovery,
+    /// going straight to passkey registration
+    pub(super) fn do_enable_cloud_backup_no_discovery(&self) -> Result<(), CloudBackupError> {
+        let passkey = PasskeyAccess::global();
+        let keychain = Keychain::global();
+        let cloud = CloudStorage::global();
+
+        info!("Enable (no discovery): getting master key");
+        let cspp = cove_cspp::Cspp::new(keychain.clone());
+        let master_key = cspp
+            .get_or_create_master_key()
+            .map_err_prefix("master key", CloudBackupError::Internal)?;
+
+        let namespace_id = master_key.namespace_id();
+        info!("Enable (no discovery): namespace_id={namespace_id}, creating passkey");
+        let (prf_key, prf_salt) = obtain_prf_key(keychain, passkey)?;
+
+        info!("Enable (no discovery): passkey created, encrypting master key");
+        let encrypted_master =
+            master_key_crypto::encrypt_master_key(&master_key, &prf_key, &prf_salt)
+                .map_err_str(CloudBackupError::Crypto)?;
+
+        let master_json =
+            serde_json::to_vec(&encrypted_master).map_err_str(CloudBackupError::Internal)?;
+
+        info!("Enable (no discovery): uploading master key");
+        cloud
+            .upload_master_key_backup(namespace_id.clone(), master_json)
+            .map_err_str(CloudBackupError::Cloud)?;
+
+        info!("Enable (no discovery): uploading wallets");
+        let critical_key = Zeroizing::new(master_key.critical_data_key());
+        let db = Database::global();
+        let uploaded_wallet_record_ids =
+            upload_all_wallets(cloud, &namespace_id, &critical_key, &db)?;
+
+        info!("Enable (no discovery): persisting state");
+        keychain
+            .save(NAMESPACE_ID_KEY.into(), namespace_id.clone())
+            .map_err_prefix("save namespace_id", CloudBackupError::Internal)?;
+        persist_enabled_cloud_backup_state(&db, uploaded_wallet_record_ids.len() as u32)?;
+        self.enqueue_pending_uploads(
+            &namespace_id,
+            std::iter::once(super::cspp_master_key_record_id()).chain(uploaded_wallet_record_ids),
+        )?;
+
+        self.send(Message::EnableComplete);
+        self.send(Message::StateChanged(CloudBackupState::Enabled));
+
+        info!("Cloud backup enabled successfully (no discovery)");
         Ok(())
     }
 

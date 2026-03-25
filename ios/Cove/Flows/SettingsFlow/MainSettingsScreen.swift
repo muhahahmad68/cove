@@ -331,6 +331,20 @@ struct MainSettingsScreen: View {
             } message: {
                 Text("Creating a new backup will not include wallets from the previous one.")
             }
+            .alert(
+                "Passkey Options",
+                isPresented: $manager.showPasskeyChoiceDialog
+            ) {
+                Button("Use Existing Passkey") {
+                    manager.rust.enableCloudBackup()
+                }
+                Button("Create New Passkey") {
+                    manager.rust.enableCloudBackupNoDiscovery()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Would you like to use an existing passkey or create a new one?")
+            }
         }
     }
 

@@ -7,6 +7,8 @@ private enum AlertState: Equatable {
     case betaError(String)
     case confirmWipeCloud
     case wipeCloudResult(String)
+    case confirmResetLocalState
+    case resetLocalStateResult(String)
 }
 
 struct AboutScreen: View {
@@ -89,6 +91,12 @@ struct AboutScreen: View {
                             alertState = .init(.confirmWipeCloud)
                         } label: {
                             Text("Wipe Cloud Backup")
+                        }
+
+                        Button {
+                            alertState = .init(.confirmResetLocalState)
+                        } label: {
+                            Text("Reset Local Backup State")
                         }
                     }
                 }
@@ -193,6 +201,26 @@ struct AboutScreen: View {
         case let .wipeCloudResult(message):
             AlertBuilder(
                 title: "Cloud Backup Wiped",
+                message: message,
+                actions: { Button("OK") { alertState = .none } }
+            ).eraseToAny()
+
+        case .confirmResetLocalState:
+            AlertBuilder(
+                title: "Reset Local Backup State?",
+                message: "Clears local keychain and DB backup state but keeps iCloud files intact. Use this to test the recovery flow.",
+                actions: {
+                    Button("Reset", role: .destructive) {
+                        RustCloudBackupManager().debugResetCloudBackupState()
+                        alertState = .init(.resetLocalStateResult("Local backup state reset. iCloud files are untouched."))
+                    }
+                    Button("Cancel", role: .cancel) { alertState = .none }
+                }
+            ).eraseToAny()
+
+        case let .resetLocalStateResult(message):
+            AlertBuilder(
+                title: "Local State Reset",
                 message: message,
                 actions: { Button("OK") { alertState = .none } }
             ).eraseToAny()

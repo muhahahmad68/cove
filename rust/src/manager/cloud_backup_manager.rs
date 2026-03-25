@@ -52,6 +52,7 @@ pub enum CloudBackupReconcileMessage {
     SyncFailed(String),
     PendingUploadVerificationChanged { pending: bool },
     ExistingBackupFound,
+    PasskeyDiscoveryCancelled,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -157,6 +158,9 @@ pub(crate) enum CloudBackupError {
 
     #[error("Passkey didn't match any backups, please try a new one")]
     PasskeyMismatch,
+
+    #[error("user cancelled passkey discovery")]
+    PasskeyDiscoveryCancelled,
 }
 
 #[uniffi::export(callback_interface)]
@@ -363,6 +367,29 @@ impl RustCloudBackupManager {
             this.send(Message::StateChanged(CloudBackupState::Enabling));
             if let Err(error) = this.do_enable_cloud_backup_create_new() {
                 error!("Cloud backup force-new enable failed: {error}");
+                this.send(Message::StateChanged(CloudBackupState::Error(error.to_string())));
+            }
+        });
+    }
+
+    /// Enable cloud backup, skipping passkey discovery — goes straight to registration
+    ///
+    /// Called after the user cancels the passkey discovery picker and chooses
+    /// "Create New Passkey" from the options alert
+    pub fn enable_cloud_backup_no_discovery(&self) {
+        {
+            let state = self.state.read();
+            if matches!(*state, CloudBackupState::Enabling | CloudBackupState::Restoring) {
+                warn!("enable_cloud_backup_no_discovery called while {state:?}, ignoring");
+                return;
+            }
+        }
+
+        let this = CLOUD_BACKUP_MANAGER.clone();
+        cove_tokio::task::spawn_blocking(move || {
+            this.send(Message::StateChanged(CloudBackupState::Enabling));
+            if let Err(error) = this.do_enable_cloud_backup_no_discovery() {
+                error!("Cloud backup enable (no discovery) failed: {error}");
                 this.send(Message::StateChanged(CloudBackupState::Error(error.to_string())));
             }
         });

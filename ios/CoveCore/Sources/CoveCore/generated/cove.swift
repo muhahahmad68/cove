@@ -7206,6 +7206,13 @@ public func FfiConverterTypeRustCloudBackupDetailManager_lower(_ value: RustClou
 public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
     
     /**
+     * Back up a newly created wallet, fire-and-forget
+     *
+     * Returns immediately if cloud backup isn't enabled (e.g. during restore)
+     */
+    func backupNewWallet(metadata: WalletMetadata) 
+    
+    /**
      * Number of wallets in the cloud backup
      */
     func backupWalletCount()  -> UInt32?
@@ -7222,10 +7229,26 @@ public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
     /**
      * Enable cloud backup — idempotent, safe to retry
      *
-     * Creates passkey (or reuses existing), encrypts master key + all wallets,
-     * hands them off to iCloud, then verifies full upload in the background
+     * Creates passkey, encrypts master key + all wallets, hands them off to iCloud,
+     * then verifies full upload in the background
      */
     func enableCloudBackup() 
+    
+    /**
+     * Enable cloud backup, skipping recovery — creates a new namespace
+     *
+     * Called after the user confirms they want a new backup when existing cloud
+     * backups were found but not recovered (UserDeclined or NoMatch)
+     */
+    func enableCloudBackupForceNew() 
+    
+    /**
+     * Enable cloud backup, skipping passkey discovery — goes straight to registration
+     *
+     * Called after the user cancels the passkey discovery picker and chooses
+     * "Create New Passkey" from the options alert
+     */
+    func enableCloudBackupNoDiscovery() 
     
     func hasPendingCloudUploadVerification()  -> Bool
     
@@ -7260,9 +7283,6 @@ public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
     
     /**
      * Background startup health check for cloud backup integrity
-     *
-     * Verifies the master key is in the keychain and backup files exist in iCloud.
-     * Returns None if everything is OK, Some(warning) if there's a problem
      */
     func verifyBackupIntegrity()  -> String?
     
@@ -7328,6 +7348,19 @@ public convenience init() {
 
     
     /**
+     * Back up a newly created wallet, fire-and-forget
+     *
+     * Returns immediately if cloud backup isn't enabled (e.g. during restore)
+     */
+open func backupNewWallet(metadata: WalletMetadata)  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_backup_new_wallet(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeWalletMetadata_lower(metadata),$0
+    )
+}
+}
+    
+    /**
      * Number of wallets in the cloud backup
      */
 open func backupWalletCount() -> UInt32?  {
@@ -7361,11 +7394,37 @@ open func debugResetCloudBackupState()  {try! rustCall() {
     /**
      * Enable cloud backup — idempotent, safe to retry
      *
-     * Creates passkey (or reuses existing), encrypts master key + all wallets,
-     * hands them off to iCloud, then verifies full upload in the background
+     * Creates passkey, encrypts master key + all wallets, hands them off to iCloud,
+     * then verifies full upload in the background
      */
 open func enableCloudBackup()  {try! rustCall() {
     uniffi_cove_fn_method_rustcloudbackupmanager_enable_cloud_backup(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Enable cloud backup, skipping recovery — creates a new namespace
+     *
+     * Called after the user confirms they want a new backup when existing cloud
+     * backups were found but not recovered (UserDeclined or NoMatch)
+     */
+open func enableCloudBackupForceNew()  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_enable_cloud_backup_force_new(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Enable cloud backup, skipping passkey discovery — goes straight to registration
+     *
+     * Called after the user cancels the passkey discovery picker and chooses
+     * "Create New Passkey" from the options alert
+     */
+open func enableCloudBackupNoDiscovery()  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_enable_cloud_backup_no_discovery(
             self.uniffiCloneHandle(),$0
     )
 }
@@ -7443,9 +7502,6 @@ open func syncPersistedState()  {try! rustCall() {
     
     /**
      * Background startup health check for cloud backup integrity
-     *
-     * Verifies the master key is in the keychain and backup files exist in iCloud.
-     * Returns None if everything is OK, Some(warning) if there's a problem
      */
 open func verifyBackupIntegrity() -> String?  {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
@@ -13318,6 +13374,64 @@ public func FfiConverterTypeContinueFromInit_lower(_ value: ContinueFromInit) ->
 }
 
 
+public struct DeepVerificationFailure: Equatable, Hashable {
+    public var kind: VerificationFailureKind
+    public var message: String
+    public var detail: CloudBackupDetail?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: VerificationFailureKind, message: String, detail: CloudBackupDetail?) {
+        self.kind = kind
+        self.message = message
+        self.detail = detail
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DeepVerificationFailure: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDeepVerificationFailure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeepVerificationFailure {
+        return
+            try DeepVerificationFailure(
+                kind: FfiConverterTypeVerificationFailureKind.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf), 
+                detail: FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DeepVerificationFailure, into buf: inout [UInt8]) {
+        FfiConverterTypeVerificationFailureKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterOptionTypeCloudBackupDetail.write(value.detail, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeepVerificationFailure_lift(_ buf: RustBuffer) throws -> DeepVerificationFailure {
+    return try FfiConverterTypeDeepVerificationFailure.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeepVerificationFailure_lower(_ value: DeepVerificationFailure) -> RustBuffer {
+    return FfiConverterTypeDeepVerificationFailure.lower(value)
+}
+
+
 public struct DeepVerificationReport: Equatable, Hashable {
     /**
      * Cloud master key PRF wrapping was repaired
@@ -14735,6 +14849,60 @@ public func FfiConverterTypeTransactionExportResult_lift(_ buf: RustBuffer) thro
 #endif
 public func FfiConverterTypeTransactionExportResult_lower(_ value: TransactionExportResult) -> RustBuffer {
     return FfiConverterTypeTransactionExportResult.lower(value)
+}
+
+
+public struct UnsupportedDbVersion: Equatable, Hashable {
+    public var path: String
+    public var version: UInt8
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, version: UInt8) {
+        self.path = path
+        self.version = version
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UnsupportedDbVersion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUnsupportedDbVersion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UnsupportedDbVersion {
+        return
+            try UnsupportedDbVersion(
+                path: FfiConverterString.read(from: &buf), 
+                version: FfiConverterUInt8.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UnsupportedDbVersion, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterUInt8.write(value.version, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUnsupportedDbVersion_lift(_ buf: RustBuffer) throws -> UnsupportedDbVersion {
+    return try FfiConverterTypeUnsupportedDbVersion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUnsupportedDbVersion_lower(_ value: UnsupportedDbVersion) -> RustBuffer {
+    return FfiConverterTypeUnsupportedDbVersion.lower(value)
 }
 
 
@@ -18036,6 +18204,8 @@ public enum CloudBackupReconcileMessage: Equatable, Hashable {
     )
     case pendingUploadVerificationChanged(pending: Bool
     )
+    case existingBackupFound
+    case passkeyDiscoveryCancelled
 
 
 
@@ -18074,6 +18244,10 @@ public struct FfiConverterTypeCloudBackupReconcileMessage: FfiConverterRustBuffe
         case 6: return .pendingUploadVerificationChanged(pending: try FfiConverterBool.read(from: &buf)
         )
         
+        case 7: return .existingBackupFound
+        
+        case 8: return .passkeyDiscoveryCancelled
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -18111,6 +18285,14 @@ public struct FfiConverterTypeCloudBackupReconcileMessage: FfiConverterRustBuffe
             writeInt(&buf, Int32(6))
             FfiConverterBool.write(pending, into: &buf)
             
+        
+        case .existingBackupFound:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .passkeyDiscoveryCancelled:
+            writeInt(&buf, Int32(8))
+        
         }
     }
 }
@@ -19172,7 +19354,7 @@ enum DatabaseError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError 
     case DatabaseAlreadyOpen
     case HeaderIntegrity(path: String, error: String
     )
-    case UnsupportedVersion(path: String, version: UInt8
+    case UnsupportedVersion(UnsupportedDbVersion
     )
     case PlaintextNotAllowed(path: String
     )
@@ -19261,8 +19443,7 @@ public struct FfiConverterTypeDatabaseError: FfiConverterRustBuffer {
             error: try FfiConverterString.read(from: &buf)
             )
         case 17: return .UnsupportedVersion(
-            path: try FfiConverterString.read(from: &buf), 
-            version: try FfiConverterUInt8.read(from: &buf)
+            try FfiConverterTypeUnsupportedDbVersion.read(from: &buf)
             )
         case 18: return .PlaintextNotAllowed(
             path: try FfiConverterString.read(from: &buf)
@@ -19359,10 +19540,9 @@ public struct FfiConverterTypeDatabaseError: FfiConverterRustBuffer {
             FfiConverterString.write(error, into: &buf)
             
         
-        case let .UnsupportedVersion(path,version):
+        case let .UnsupportedVersion(v1):
             writeInt(&buf, Int32(17))
-            FfiConverterString.write(path, into: &buf)
-            FfiConverterUInt8.write(version, into: &buf)
+            FfiConverterTypeUnsupportedDbVersion.write(v1, into: &buf)
             
         
         case let .PlaintextNotAllowed(path):
@@ -19387,117 +19567,6 @@ public func FfiConverterTypeDatabaseError_lift(_ buf: RustBuffer) throws -> Data
 public func FfiConverterTypeDatabaseError_lower(_ value: DatabaseError) -> RustBuffer {
     return FfiConverterTypeDatabaseError.lower(value)
 }
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-
-public enum DeepVerificationFailure: Equatable, Hashable {
-    
-    /**
-     * Transient iCloud/network/passkey error — safe to retry
-     */
-    case retry(message: String, detail: CloudBackupDetail?
-    )
-    /**
-     * Manifest missing, master key verified intact — recreate from local wallets
-     */
-    case recreateManifest(message: String, detail: CloudBackupDetail?, warning: String
-    )
-    /**
-     * No verified cloud or local master key available — full re-enable needed
-     */
-    case reinitializeBackup(message: String, detail: CloudBackupDetail?, warning: String
-    )
-    /**
-     * Backup uses a newer format — do not overwrite
-     */
-    case unsupportedVersion(message: String, detail: CloudBackupDetail?
-    )
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension DeepVerificationFailure: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeDeepVerificationFailure: FfiConverterRustBuffer {
-    typealias SwiftType = DeepVerificationFailure
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeepVerificationFailure {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .retry(message: try FfiConverterString.read(from: &buf), detail: try FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
-        )
-        
-        case 2: return .recreateManifest(message: try FfiConverterString.read(from: &buf), detail: try FfiConverterOptionTypeCloudBackupDetail.read(from: &buf), warning: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 3: return .reinitializeBackup(message: try FfiConverterString.read(from: &buf), detail: try FfiConverterOptionTypeCloudBackupDetail.read(from: &buf), warning: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 4: return .unsupportedVersion(message: try FfiConverterString.read(from: &buf), detail: try FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
-        )
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: DeepVerificationFailure, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case let .retry(message,detail):
-            writeInt(&buf, Int32(1))
-            FfiConverterString.write(message, into: &buf)
-            FfiConverterOptionTypeCloudBackupDetail.write(detail, into: &buf)
-            
-        
-        case let .recreateManifest(message,detail,warning):
-            writeInt(&buf, Int32(2))
-            FfiConverterString.write(message, into: &buf)
-            FfiConverterOptionTypeCloudBackupDetail.write(detail, into: &buf)
-            FfiConverterString.write(warning, into: &buf)
-            
-        
-        case let .reinitializeBackup(message,detail,warning):
-            writeInt(&buf, Int32(3))
-            FfiConverterString.write(message, into: &buf)
-            FfiConverterOptionTypeCloudBackupDetail.write(detail, into: &buf)
-            FfiConverterString.write(warning, into: &buf)
-            
-        
-        case let .unsupportedVersion(message,detail):
-            writeInt(&buf, Int32(4))
-            FfiConverterString.write(message, into: &buf)
-            FfiConverterOptionTypeCloudBackupDetail.write(detail, into: &buf)
-            
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeDeepVerificationFailure_lift(_ buf: RustBuffer) throws -> DeepVerificationFailure {
-    return try FfiConverterTypeDeepVerificationFailure.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeDeepVerificationFailure_lower(_ value: DeepVerificationFailure) -> RustBuffer {
-    return FfiConverterTypeDeepVerificationFailure.lower(value)
-}
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -27448,6 +27517,8 @@ enum TransactionDetailError: Swift.Error, Equatable, Hashable, Foundation.Locali
     )
     case ChangeAddress(String
     )
+    case UnsupportedNetwork(String
+    )
     case NotFound
 
     
@@ -27503,7 +27574,10 @@ public struct FfiConverterTypeTransactionDetailError: FfiConverterRustBuffer {
         case 5: return .ChangeAddress(
             try FfiConverterString.read(from: &buf)
             )
-        case 6: return .NotFound
+        case 6: return .UnsupportedNetwork(
+            try FfiConverterString.read(from: &buf)
+            )
+        case 7: return .NotFound
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -27541,8 +27615,13 @@ public struct FfiConverterTypeTransactionDetailError: FfiConverterRustBuffer {
             FfiConverterString.write(v1, into: &buf)
             
         
-        case .NotFound:
+        case let .UnsupportedNetwork(v1):
             writeInt(&buf, Int32(6))
+            FfiConverterString.write(v1, into: &buf)
+            
+        
+        case .NotFound:
+            writeInt(&buf, Int32(7))
         
         }
     }
@@ -28106,6 +28185,105 @@ public func FfiConverterTypeUrType_lower(_ value: UrType) -> RustBuffer {
 
 
 
+public enum VerificationFailureKind: Equatable, Hashable {
+    
+    /**
+     * Transient iCloud/network/passkey error — safe to retry
+     */
+    case retry
+    /**
+     * Manifest missing, master key verified intact — recreate from local wallets
+     */
+    case recreateManifest(warning: String
+    )
+    /**
+     * No verified cloud or local master key available — full re-enable needed
+     */
+    case reinitializeBackup(warning: String
+    )
+    /**
+     * Backup uses a newer format — do not overwrite
+     */
+    case unsupportedVersion
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension VerificationFailureKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVerificationFailureKind: FfiConverterRustBuffer {
+    typealias SwiftType = VerificationFailureKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VerificationFailureKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .retry
+        
+        case 2: return .recreateManifest(warning: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .reinitializeBackup(warning: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .unsupportedVersion
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: VerificationFailureKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .retry:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .recreateManifest(warning):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(warning, into: &buf)
+            
+        
+        case let .reinitializeBackup(warning):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(warning, into: &buf)
+            
+        
+        case .unsupportedVersion:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVerificationFailureKind_lift(_ buf: RustBuffer) throws -> VerificationFailureKind {
+    return try FfiConverterTypeVerificationFailureKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVerificationFailureKind_lower(_ value: VerificationFailureKind) -> RustBuffer {
+    return FfiConverterTypeVerificationFailureKind.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum VerificationState: Equatable, Hashable {
     
     case idle
@@ -28628,7 +28806,7 @@ enum WalletDataError: Swift.Error, Equatable, Hashable, Foundation.LocalizedErro
     )
     case Save(String
     )
-    case UnsupportedVersion(id: WalletId, path: String, version: UInt8
+    case UnsupportedVersion(id: WalletId, version: UnsupportedDbVersion
     )
 
     
@@ -28685,8 +28863,7 @@ public struct FfiConverterTypeWalletDataError: FfiConverterRustBuffer {
             )
         case 5: return .UnsupportedVersion(
             id: try FfiConverterTypeWalletId.read(from: &buf), 
-            path: try FfiConverterString.read(from: &buf), 
-            version: try FfiConverterUInt8.read(from: &buf)
+            version: try FfiConverterTypeUnsupportedDbVersion.read(from: &buf)
             )
 
          default: throw UniffiInternalError.unexpectedEnumCase
@@ -28722,11 +28899,10 @@ public struct FfiConverterTypeWalletDataError: FfiConverterRustBuffer {
             FfiConverterString.write(v1, into: &buf)
             
         
-        case let .UnsupportedVersion(id,path,version):
+        case let .UnsupportedVersion(id,version):
             writeInt(&buf, Int32(5))
             FfiConverterTypeWalletId.write(id, into: &buf)
-            FfiConverterString.write(path, into: &buf)
-            FfiConverterUInt8.write(version, into: &buf)
+            FfiConverterTypeUnsupportedDbVersion.write(version, into: &buf)
             
         }
     }
@@ -34686,6 +34862,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustcloudbackupdetailmanager_listen_for_updates() != 46839) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_backup_new_wallet() != 25342) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_backup_wallet_count() != 17456) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -34695,7 +34874,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_debug_reset_cloud_backup_state() != 45375) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_rustcloudbackupmanager_enable_cloud_backup() != 15551) {
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_enable_cloud_backup() != 63789) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_enable_cloud_backup_force_new() != 50668) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_enable_cloud_backup_no_discovery() != 64607) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_has_pending_cloud_upload_verification() != 4437) {
@@ -34719,7 +34904,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_sync_persisted_state() != 19758) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_rustcloudbackupmanager_verify_backup_integrity() != 34534) {
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_verify_backup_integrity() != 47801) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustcoincontrolmanager_button_presentation() != 24764) {

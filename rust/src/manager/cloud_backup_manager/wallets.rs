@@ -489,8 +489,8 @@ pub(super) fn discover_or_create_prf_key(
             Ok((prf_key, prf_salt))
         }
         Err(cove_device::passkey::PasskeyError::UserCancelled) => {
-            info!("User cancelled passkey picker, creating new passkey");
-            obtain_prf_key(keychain, passkey)
+            info!("User cancelled passkey discovery");
+            Err(CloudBackupError::PasskeyDiscoveryCancelled)
         }
         Err(cove_device::passkey::PasskeyError::NoCredentialFound) => {
             info!("No existing passkey found, creating new");

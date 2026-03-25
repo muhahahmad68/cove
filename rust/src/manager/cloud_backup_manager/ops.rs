@@ -455,58 +455,42 @@ impl RustCloudBackupManager {
 
     pub(super) fn do_restore_from_cloud_backup(&self) -> Result<(), CloudBackupError> {
         self.send(Message::StateChanged(CloudBackupState::Restoring));
-        info!("Restore: listing namespaces");
 
         let cloud = CloudStorage::global();
-        let passkey = PasskeyAccess::global();
         let keychain = Keychain::global();
         let cspp = cove_cspp::Cspp::new(keychain.clone());
 
-        let namespaces = cloud.list_namespaces().map_err_str(CloudBackupError::Cloud)?;
-        if namespaces.is_empty() {
-            return Err(CloudBackupError::Internal("no cloud backup namespaces found".into()));
-        }
+        // passkey matching first, local master key as fallback
+        let passkey = PasskeyAccess::global();
+        let (master_key, namespace_id) = match self.restore_via_passkey_matching(cloud, passkey) {
+            Ok(matched) => {
+                cspp.save_master_key(&matched.master_key)
+                    .map_err_prefix("save master key", CloudBackupError::Internal)?;
+                cove_cspp::reset_master_key_cache();
 
-        info!("Restore: authenticating with passkey across {} namespace(s)", namespaces.len());
+                keychain
+                    .save(NAMESPACE_ID_KEY.to_string(), matched.namespace_id.clone())
+                    .map_err_prefix("save namespace_id", CloudBackupError::Internal)?;
+                keychain
+                    .save(CREDENTIAL_ID_KEY.to_string(), hex::encode(&matched.credential_id))
+                    .map_err_prefix("save credential_id", CloudBackupError::Internal)?;
+                keychain
+                    .save(PRF_SALT_KEY.to_string(), hex::encode(matched.prf_salt))
+                    .map_err_prefix("save prf_salt", CloudBackupError::Internal)?;
 
-        let matched = match try_match_namespace_with_passkey(cloud, passkey, &namespaces)? {
-            NamespaceMatchOutcome::Matched(m) => m,
-            NamespaceMatchOutcome::UserDeclined | NamespaceMatchOutcome::NoMatch => {
-                return Err(CloudBackupError::PasskeyMismatch);
+                (matched.master_key, matched.namespace_id)
             }
-            NamespaceMatchOutcome::Inconclusive => {
-                return Err(CloudBackupError::Cloud(
-                    "could not download all cloud backups, please try again when iCloud is available".into(),
-                ));
+            Err(CloudBackupError::PasskeyMismatch) => {
+                info!("Restore: passkey didn't match, trying local master key fallback");
+                self.try_restore_from_local_master_key(cloud, &cspp)
+                    .ok_or(CloudBackupError::PasskeyMismatch)?
             }
-            NamespaceMatchOutcome::UnsupportedVersions => {
-                return Err(CloudBackupError::Internal(
-                    "some cloud backups use a newer format, please update the app".into(),
-                ));
-            }
+            Err(e) => return Err(e),
         };
 
-        let matched_namespace = matched.namespace_id;
-        let master_key = matched.master_key;
-        let matched_credential_id = matched.credential_id;
-        let matched_prf_salt = matched.prf_salt;
-
-        info!("Restore: matched namespace {matched_namespace}");
-
-        let local_master_key = cspp
-            .load_master_key_from_store()
-            .map_err_prefix("load local master key", CloudBackupError::Internal)?;
-
-        let is_fresh_device = local_master_key.is_none();
-        if is_fresh_device {
-            cspp.save_master_key(&master_key)
-                .map_err_prefix("save master key", CloudBackupError::Internal)?;
-            cove_cspp::reset_master_key_cache();
-        }
-
-        let wallet_record_ids = cloud
-            .list_wallet_backups(matched_namespace.clone())
-            .map_err_str(CloudBackupError::Cloud)?;
+        // download and restore wallets
+        let wallet_record_ids =
+            cloud.list_wallet_backups(namespace_id.clone()).map_err_str(CloudBackupError::Cloud)?;
 
         let total = wallet_record_ids.len() as u32;
         let critical_key = Zeroizing::new(master_key.critical_data_key());
@@ -522,7 +506,7 @@ impl RustCloudBackupManager {
         for (index, record_id) in wallet_record_ids.iter().enumerate() {
             match restore_single_wallet(
                 cloud,
-                &matched_namespace,
+                &namespace_id,
                 record_id,
                 &critical_key,
                 &mut existing_fingerprints,
@@ -543,18 +527,6 @@ impl RustCloudBackupManager {
             return Err(CloudBackupError::Internal("all wallets failed to restore".into()));
         }
 
-        if is_fresh_device {
-            keychain
-                .save(NAMESPACE_ID_KEY.to_string(), matched_namespace)
-                .map_err_prefix("save namespace_id", CloudBackupError::Internal)?;
-            keychain
-                .save(CREDENTIAL_ID_KEY.to_string(), hex::encode(&matched_credential_id))
-                .map_err_prefix("save credential_id", CloudBackupError::Internal)?;
-            keychain
-                .save(PRF_SALT_KEY.to_string(), hex::encode(matched_prf_salt))
-                .map_err_prefix("save prf_salt", CloudBackupError::Internal)?;
-        }
-
         let wallet_count = report.wallets_restored;
         let now = jiff::Timestamp::now().as_second().try_into().unwrap_or(0);
         let db = Database::global();
@@ -570,5 +542,65 @@ impl RustCloudBackupManager {
 
         info!("Cloud backup restore complete");
         Ok(())
+    }
+
+    /// Try to restore using a local master key from keychain
+    ///
+    /// Returns `Some((master_key, namespace_id))` if a local master key exists
+    /// and the cloud namespace has wallets. Returns `None` to fall through
+    /// to passkey-based matching
+    fn try_restore_from_local_master_key(
+        &self,
+        cloud: &CloudStorage,
+        cspp: &cove_cspp::Cspp<Keychain>,
+    ) -> Option<(cove_cspp::master_key::MasterKey, String)> {
+        let master_key = cspp.load_master_key_from_store().ok()??;
+        let namespace_id = master_key.namespace_id();
+
+        let has_wallets = cloud
+            .list_wallet_backups(namespace_id.clone())
+            .map(|ids| !ids.is_empty())
+            .unwrap_or(false);
+
+        if has_wallets {
+            info!("Restore: found local master key with wallets, namespace_id={namespace_id}");
+            Some((master_key, namespace_id))
+        } else {
+            info!(
+                "Restore: local master key found but no wallets in cloud, falling through to passkey matching"
+            );
+            None
+        }
+    }
+
+    /// Restore via passkey-based namespace matching (fresh device path)
+    fn restore_via_passkey_matching(
+        &self,
+        cloud: &CloudStorage,
+        passkey: &PasskeyAccess,
+    ) -> Result<super::wallets::NamespaceMatch, CloudBackupError> {
+        let namespaces = cloud.list_namespaces().map_err_str(CloudBackupError::Cloud)?;
+        if namespaces.is_empty() {
+            return Err(CloudBackupError::Internal("no cloud backup namespaces found".into()));
+        }
+
+        info!("Restore: authenticating with passkey across {} namespace(s)", namespaces.len());
+
+        match try_match_namespace_with_passkey(cloud, passkey, &namespaces)? {
+            NamespaceMatchOutcome::Matched(m) => {
+                info!("Restore: matched namespace {}", m.namespace_id);
+                Ok(m)
+            }
+            NamespaceMatchOutcome::UserDeclined | NamespaceMatchOutcome::NoMatch => {
+                Err(CloudBackupError::PasskeyMismatch)
+            }
+            NamespaceMatchOutcome::Inconclusive => Err(CloudBackupError::Cloud(
+                "could not download all cloud backups, please try again when iCloud is available"
+                    .into(),
+            )),
+            NamespaceMatchOutcome::UnsupportedVersions => Err(CloudBackupError::Internal(
+                "some cloud backups use a newer format, please update the app".into(),
+            )),
+        }
     }
 }

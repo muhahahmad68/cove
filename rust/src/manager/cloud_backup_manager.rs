@@ -11,7 +11,9 @@ use flume::{Receiver, Sender};
 use parking_lot::RwLock;
 use tracing::{error, info, warn};
 
-use cove_device::keychain::Keychain;
+use cove_device::keychain::{
+    CSPP_CREDENTIAL_ID_KEY, CSPP_NAMESPACE_ID_KEY, CSPP_PRF_SALT_KEY, Keychain,
+};
 use cove_types::network::Network;
 
 use crate::backup::model::DescriptorPair as LocalDescriptorPair;
@@ -24,9 +26,6 @@ use self::wallets::{all_local_wallets, count_all_wallets};
 type LocalWalletSecret = crate::backup::model::WalletSecret;
 
 const RP_ID: &str = "covebitcoinwallet.com";
-const CREDENTIAL_ID_KEY: &str = "cspp::v1::credential_id";
-const PRF_SALT_KEY: &str = "cspp::v1::prf_salt";
-const NAMESPACE_ID_KEY: &str = "cspp::v1::namespace_id";
 const UPLOAD_VERIFICATION_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
 type Message = CloudBackupReconcileMessage;
@@ -203,7 +202,7 @@ impl RustCloudBackupManager {
     fn current_namespace_id(&self) -> Result<String, CloudBackupError> {
         let keychain = Keychain::global();
         keychain
-            .get(NAMESPACE_ID_KEY.into())
+            .get(CSPP_NAMESPACE_ID_KEY.into())
             .ok_or_else(|| CloudBackupError::Internal("namespace_id not found in keychain".into()))
     }
 }
@@ -304,9 +303,9 @@ impl RustCloudBackupManager {
     /// Debug-only: pair with Swift-side iCloud wipe for full reset
     pub fn debug_reset_cloud_backup_state(&self) {
         let keychain = Keychain::global();
-        keychain.delete(NAMESPACE_ID_KEY.to_string());
-        keychain.delete(CREDENTIAL_ID_KEY.to_string());
-        keychain.delete(PRF_SALT_KEY.to_string());
+        keychain.delete(CSPP_NAMESPACE_ID_KEY.to_string());
+        keychain.delete(CSPP_CREDENTIAL_ID_KEY.to_string());
+        keychain.delete(CSPP_PRF_SALT_KEY.to_string());
 
         // also delete the master key so next enable starts clean
         let cspp = cove_cspp::Cspp::new(keychain.clone());

@@ -11,10 +11,12 @@ use zeroize::Zeroizing;
 
 use super::pending::{build_detail_from_wallet_ids, cleanup_confirmed_pending_blobs};
 use super::wallets::{all_local_wallets, count_all_wallets, create_prf_key_without_persisting};
+use cove_device::keychain::{CSPP_CREDENTIAL_ID_KEY, CSPP_PRF_SALT_KEY};
+
 use super::{
-    CREDENTIAL_ID_KEY, CloudBackupError, CloudBackupState, DeepVerificationFailure,
-    DeepVerificationReport, DeepVerificationResult, PRF_SALT_KEY, RP_ID, RustCloudBackupManager,
-    VerificationFailureKind, cspp_master_key_record_id,
+    CloudBackupError, CloudBackupState, DeepVerificationFailure, DeepVerificationReport,
+    DeepVerificationResult, RP_ID, RustCloudBackupManager, VerificationFailureKind,
+    cspp_master_key_record_id,
 };
 use crate::database::Database;
 use crate::database::global_config::CloudBackup;
@@ -37,11 +39,11 @@ impl RustCloudBackupManager {
             issues.push("master key not found in keychain");
         }
 
-        if keychain.get(CREDENTIAL_ID_KEY.into()).is_none() {
+        if keychain.get(CSPP_CREDENTIAL_ID_KEY.into()).is_none() {
             issues
                 .push("passkey credential not found — open Cloud Backup in Settings to re-verify");
         }
-        if keychain.get(PRF_SALT_KEY.into()).is_none() {
+        if keychain.get(CSPP_PRF_SALT_KEY.into()).is_none() {
             issues.push("passkey salt not found — open Cloud Backup in Settings to re-verify");
         }
 
@@ -216,11 +218,8 @@ impl RustCloudBackupManager {
             .map_err_str(CloudBackupError::Cloud)?;
 
         keychain
-            .save(CREDENTIAL_ID_KEY.into(), hex::encode(&new_prf.credential_id))
-            .map_err_prefix("save credential", CloudBackupError::Internal)?;
-        keychain
-            .save(PRF_SALT_KEY.into(), hex::encode(new_prf.prf_salt))
-            .map_err_prefix("save prf_salt", CloudBackupError::Internal)?;
+            .save_cspp_passkey(&new_prf.credential_id, new_prf.prf_salt)
+            .map_err_prefix("save cspp credentials", CloudBackupError::Internal)?;
         self.enqueue_pending_uploads(&namespace, std::iter::once(cspp_master_key_record_id()))?;
 
         info!("Repaired cloud master key wrapper with new passkey");
@@ -448,11 +447,8 @@ impl RustCloudBackupManager {
                 .map_err_str(CloudBackupError::Cloud)?;
 
             keychain
-                .save(CREDENTIAL_ID_KEY.into(), hex::encode(&new_credential_id))
-                .map_err_prefix("save credential", CloudBackupError::Internal)?;
-            keychain
-                .save(PRF_SALT_KEY.into(), hex::encode(new_prf_salt))
-                .map_err_prefix("save prf_salt", CloudBackupError::Internal)?;
+                .save_cspp_passkey(&new_credential_id, new_prf_salt)
+                .map_err_prefix("save cspp credentials", CloudBackupError::Internal)?;
             self.enqueue_pending_uploads(&namespace, std::iter::once(cspp_master_key_record_id()))?;
 
             report.master_key_wrapper_repaired = true;
@@ -581,7 +577,7 @@ fn authenticate_with_fallback(
     prf_salt: &[u8; 32],
 ) -> Result<([u8; 32], Vec<u8>, bool), CloudBackupError> {
     let stored_credential_id: Option<Vec<u8>> =
-        keychain.get(CREDENTIAL_ID_KEY.into()).and_then(|hex_str| {
+        keychain.get(CSPP_CREDENTIAL_ID_KEY.into()).and_then(|hex_str| {
             hex::decode(hex_str)
                 .inspect_err(|error| warn!("Failed to decode stored credential_id: {error}"))
                 .ok()
@@ -686,24 +682,13 @@ fn verify_passkey_and_master_key(
 
     match master_key_crypto::decrypt_master_key(encrypted_master, &prf_key) {
         Ok(master_key) => {
-            keychain
-                .save(CREDENTIAL_ID_KEY.into(), hex::encode(&credential_id))
-                .map_err(|e| {
-                    Box::new(DeepVerificationResult::Failed(DeepVerificationFailure {
-                        kind: VerificationFailureKind::Retry,
-                        message: format!("save credential_id: {e}"),
-                        detail: report.detail.clone(),
-                    }))
-                })?;
-            keychain
-                .save(PRF_SALT_KEY.into(), hex::encode(prf_salt))
-                .map_err(|e| {
-                    Box::new(DeepVerificationResult::Failed(DeepVerificationFailure {
-                        kind: VerificationFailureKind::Retry,
-                        message: format!("save prf_salt: {e}"),
-                        detail: report.detail.clone(),
-                    }))
-                })?;
+            keychain.save_cspp_passkey(&credential_id, prf_salt).map_err(|e| {
+                Box::new(DeepVerificationResult::Failed(DeepVerificationFailure {
+                    kind: VerificationFailureKind::Retry,
+                    message: format!("save cspp credentials: {e}"),
+                    detail: report.detail.clone(),
+                }))
+            })?;
             Ok((Some(master_key), None))
         }
         Err(_) if has_local_master_key => Ok((None, Some(credential_id))),

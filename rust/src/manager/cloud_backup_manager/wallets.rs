@@ -16,9 +16,11 @@ use strum::IntoEnumIterator as _;
 use tracing::{info, warn};
 use zeroize::Zeroizing;
 
+use cove_device::keychain::{CSPP_CREDENTIAL_ID_KEY, CSPP_PRF_SALT_KEY};
+
 use super::{
-    CREDENTIAL_ID_KEY, CloudBackupError, LocalDescriptorPair, LocalWalletMode, LocalWalletSecret,
-    PRF_SALT_KEY, RP_ID, RustCloudBackupManager,
+    CloudBackupError, LocalDescriptorPair, LocalWalletMode, LocalWalletSecret, RP_ID,
+    RustCloudBackupManager,
 };
 use crate::database::Database;
 use crate::database::global_config::CloudBackup;
@@ -415,8 +417,8 @@ pub(super) fn obtain_prf_key(
     keychain: &Keychain,
     passkey: &PasskeyAccess,
 ) -> Result<([u8; 32], [u8; 32]), CloudBackupError> {
-    keychain.delete(CREDENTIAL_ID_KEY.to_string());
-    keychain.delete(PRF_SALT_KEY.to_string());
+    keychain.delete(CSPP_CREDENTIAL_ID_KEY.to_string());
+    keychain.delete(CSPP_PRF_SALT_KEY.to_string());
 
     info!("Creating new passkey");
     let prf_salt: [u8; 32] = rand::rng().random();
@@ -442,12 +444,8 @@ pub(super) fn obtain_prf_key(
         .map_err(|_| CloudBackupError::Internal("PRF output is not 32 bytes".into()))?;
 
     keychain
-        .save(CREDENTIAL_ID_KEY.to_string(), hex::encode(&credential_id))
-        .map_err_prefix("save credential", CloudBackupError::Internal)?;
-
-    keychain
-        .save(PRF_SALT_KEY.to_string(), hex::encode(prf_salt))
-        .map_err_prefix("save prf_salt", CloudBackupError::Internal)?;
+        .save_cspp_passkey(&credential_id, prf_salt)
+        .map_err_prefix("save cspp credentials", CloudBackupError::Internal)?;
 
     Ok((prf_key, prf_salt))
 }
@@ -477,14 +475,11 @@ pub(super) fn discover_or_create_prf_key(
                 .map_err(|_| CloudBackupError::Internal("PRF output is not 32 bytes".into()))?;
 
             info!("Discovered existing passkey, reusing");
-            keychain.delete(CREDENTIAL_ID_KEY.to_string());
-            keychain.delete(PRF_SALT_KEY.to_string());
+            keychain.delete(CSPP_CREDENTIAL_ID_KEY.to_string());
+            keychain.delete(CSPP_PRF_SALT_KEY.to_string());
             keychain
-                .save(CREDENTIAL_ID_KEY.to_string(), hex::encode(&discovered.credential_id))
-                .map_err_prefix("save credential", CloudBackupError::Internal)?;
-            keychain
-                .save(PRF_SALT_KEY.to_string(), hex::encode(prf_salt))
-                .map_err_prefix("save prf_salt", CloudBackupError::Internal)?;
+                .save_cspp_passkey(&discovered.credential_id, prf_salt)
+                .map_err_prefix("save cspp credentials", CloudBackupError::Internal)?;
 
             Ok((prf_key, prf_salt))
         }

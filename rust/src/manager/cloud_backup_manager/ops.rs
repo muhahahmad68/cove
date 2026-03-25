@@ -12,10 +12,11 @@ use super::wallets::{
     persist_enabled_cloud_backup_state, restore_single_wallet, try_match_namespace_with_passkey,
     upload_all_wallets,
 };
+use cove_device::keychain::CSPP_NAMESPACE_ID_KEY;
+
 use super::{
-    CREDENTIAL_ID_KEY, CloudBackupError, CloudBackupReconcileMessage as Message,
-    CloudBackupRestoreReport, CloudBackupState, CloudBackupWalletItem, CloudBackupWalletStatus,
-    NAMESPACE_ID_KEY, PRF_SALT_KEY, RustCloudBackupManager,
+    CloudBackupError, CloudBackupReconcileMessage as Message, CloudBackupRestoreReport,
+    CloudBackupState, CloudBackupWalletItem, CloudBackupWalletStatus, RustCloudBackupManager,
 };
 use crate::database::Database;
 use crate::database::global_config::CloudBackup;
@@ -318,14 +319,12 @@ impl RustCloudBackupManager {
 
         // persist credentials AFTER uploads succeed
         keychain
-            .save(CREDENTIAL_ID_KEY.to_string(), hex::encode(&matched.credential_id))
-            .map_err_prefix("save credential_id", CloudBackupError::Internal)?;
-        keychain
-            .save(PRF_SALT_KEY.to_string(), hex::encode(matched.prf_salt))
-            .map_err_prefix("save prf_salt", CloudBackupError::Internal)?;
-        keychain
-            .save(NAMESPACE_ID_KEY.into(), matched.namespace_id.clone())
-            .map_err_prefix("save namespace_id", CloudBackupError::Internal)?;
+            .save_cspp_passkey_and_namespace(
+                &matched.credential_id,
+                matched.prf_salt,
+                &matched.namespace_id,
+            )
+            .map_err_prefix("save cspp credentials", CloudBackupError::Internal)?;
 
         persist_enabled_cloud_backup_state(&db, wallet_count)?;
         self.enqueue_pending_uploads(&matched.namespace_id, uploaded_wallet_record_ids)?;
@@ -385,7 +384,7 @@ impl RustCloudBackupManager {
 
         info!("Enable: wallets uploaded, persisting state");
         keychain
-            .save(NAMESPACE_ID_KEY.into(), namespace_id.clone())
+            .save(CSPP_NAMESPACE_ID_KEY.into(), namespace_id.clone())
             .map_err_prefix("save namespace_id", CloudBackupError::Internal)?;
         persist_enabled_cloud_backup_state(&db, uploaded_wallet_record_ids.len() as u32)?;
         self.enqueue_pending_uploads(
@@ -438,7 +437,7 @@ impl RustCloudBackupManager {
 
         info!("Enable (no discovery): persisting state");
         keychain
-            .save(NAMESPACE_ID_KEY.into(), namespace_id.clone())
+            .save(CSPP_NAMESPACE_ID_KEY.into(), namespace_id.clone())
             .map_err_prefix("save namespace_id", CloudBackupError::Internal)?;
         persist_enabled_cloud_backup_state(&db, uploaded_wallet_record_ids.len() as u32)?;
         self.enqueue_pending_uploads(
@@ -469,14 +468,12 @@ impl RustCloudBackupManager {
                 cove_cspp::reset_master_key_cache();
 
                 keychain
-                    .save(NAMESPACE_ID_KEY.to_string(), matched.namespace_id.clone())
-                    .map_err_prefix("save namespace_id", CloudBackupError::Internal)?;
-                keychain
-                    .save(CREDENTIAL_ID_KEY.to_string(), hex::encode(&matched.credential_id))
-                    .map_err_prefix("save credential_id", CloudBackupError::Internal)?;
-                keychain
-                    .save(PRF_SALT_KEY.to_string(), hex::encode(matched.prf_salt))
-                    .map_err_prefix("save prf_salt", CloudBackupError::Internal)?;
+                    .save_cspp_passkey_and_namespace(
+                        &matched.credential_id,
+                        matched.prf_salt,
+                        &matched.namespace_id,
+                    )
+                    .map_err_prefix("save cspp credentials", CloudBackupError::Internal)?;
 
                 (matched.master_key, matched.namespace_id)
             }

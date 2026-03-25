@@ -18,6 +18,10 @@ use rand::RngExt as _;
 const LOCAL_DB_KEY_NAME: &str = "local::v1::db_encryption_key";
 const LOCAL_DB_KEY_CRYPTOR: &str = "local::v1::db_encryption_key_cryptor";
 
+pub const CSPP_CREDENTIAL_ID_KEY: &str = "cspp::v1::credential_id";
+pub const CSPP_PRF_SALT_KEY: &str = "cspp::v1::prf_salt";
+pub const CSPP_NAMESPACE_ID_KEY: &str = "cspp::v1::namespace_id";
+
 #[derive(Debug, Clone, Hash, Eq, PartialEq, uniffi::Error, thiserror::Error)]
 #[uniffi::export(Display)]
 pub enum KeychainError {
@@ -151,6 +155,31 @@ impl Keychain {
     pub fn purge_local_encryption_key(&self) {
         self.0.delete(LOCAL_DB_KEY_CRYPTOR.into());
         self.0.delete(LOCAL_DB_KEY_NAME.into());
+    }
+
+    /// Saves CSPP passkey credentials (credential_id and PRF salt) to the keychain
+    ///
+    /// Hex-encodes both values before saving
+    pub fn save_cspp_passkey(
+        &self,
+        credential_id: &[u8],
+        prf_salt: [u8; 32],
+    ) -> Result<(), KeychainError> {
+        self.0.save(CSPP_CREDENTIAL_ID_KEY.into(), hex::encode(credential_id))?;
+        self.0.save(CSPP_PRF_SALT_KEY.into(), hex::encode(prf_salt))?;
+        Ok(())
+    }
+
+    /// Saves CSPP passkey credentials and namespace ID to the keychain
+    pub fn save_cspp_passkey_and_namespace(
+        &self,
+        credential_id: &[u8],
+        prf_salt: [u8; 32],
+        namespace_id: &str,
+    ) -> Result<(), KeychainError> {
+        self.save_cspp_passkey(credential_id, prf_salt)?;
+        self.0.save(CSPP_NAMESPACE_ID_KEY.into(), namespace_id.to_owned())?;
+        Ok(())
     }
 
     /// Saves a wallet's mnemonic seed encrypted in the keychain

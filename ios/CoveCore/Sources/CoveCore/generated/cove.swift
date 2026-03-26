@@ -7104,7 +7104,7 @@ public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
      */
     func backupWalletCount()  -> UInt32?
     
-    func currentState()  -> CloudBackupState
+    func currentStatus()  -> CloudBackupStatus
     
     /**
      * Reset local cloud backup state (keychain + DB) without touching iCloud
@@ -7165,7 +7165,7 @@ public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
     
     func resumePendingCloudUploadVerification() 
     
-    func snapshot()  -> CloudBackupSnapshot
+    func state()  -> CloudBackupState
     
     /**
      * Read persisted cloud backup state from DB and update in-memory state
@@ -7337,9 +7337,9 @@ open func backupWalletCount() -> UInt32?  {
 })
 }
     
-open func currentState() -> CloudBackupState  {
-    return try!  FfiConverterTypeCloudBackupState_lift(try! rustCall() {
-    uniffi_cove_fn_method_rustcloudbackupmanager_current_state(
+open func currentStatus() -> CloudBackupStatus  {
+    return try!  FfiConverterTypeCloudBackupStatus_lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_current_status(
             self.uniffiCloneHandle(),$0
     )
 })
@@ -7464,9 +7464,9 @@ open func resumePendingCloudUploadVerification()  {try! rustCall() {
 }
 }
     
-open func snapshot() -> CloudBackupSnapshot  {
-    return try!  FfiConverterTypeCloudBackupSnapshot_lift(try! rustCall() {
-    uniffi_cove_fn_method_rustcloudbackupmanager_snapshot(
+open func state() -> CloudBackupState  {
+    return try!  FfiConverterTypeCloudBackupState_lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_state(
             self.uniffiCloneHandle(),$0
     )
 })
@@ -13105,8 +13105,8 @@ public func FfiConverterTypeCloudBackupRestoreReport_lower(_ value: CloudBackupR
 }
 
 
-public struct CloudBackupSnapshot: Equatable, Hashable {
-    public var state: CloudBackupState
+public struct CloudBackupState: Equatable, Hashable {
+    public var status: CloudBackupStatus
     public var progress: CloudBackupProgress?
     public var restoreReport: CloudBackupRestoreReport?
     public var syncError: String?
@@ -13122,8 +13122,8 @@ public struct CloudBackupSnapshot: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(state: CloudBackupState, progress: CloudBackupProgress?, restoreReport: CloudBackupRestoreReport?, syncError: String?, hasPendingUploadVerification: Bool, isUnverified: Bool, isConfigured: Bool, detail: CloudBackupDetail?, verification: VerificationState, sync: SyncState, recovery: RecoveryState, cloudOnly: CloudOnlyState, cloudOnlyOperation: CloudOnlyOperation) {
-        self.state = state
+    public init(status: CloudBackupStatus, progress: CloudBackupProgress?, restoreReport: CloudBackupRestoreReport?, syncError: String?, hasPendingUploadVerification: Bool, isUnverified: Bool, isConfigured: Bool, detail: CloudBackupDetail?, verification: VerificationState, sync: SyncState, recovery: RecoveryState, cloudOnly: CloudOnlyState, cloudOnlyOperation: CloudOnlyOperation) {
+        self.status = status
         self.progress = progress
         self.restoreReport = restoreReport
         self.syncError = syncError
@@ -13144,17 +13144,17 @@ public struct CloudBackupSnapshot: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension CloudBackupSnapshot: Sendable {}
+extension CloudBackupState: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeCloudBackupSnapshot: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupSnapshot {
+public struct FfiConverterTypeCloudBackupState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupState {
         return
-            try CloudBackupSnapshot(
-                state: FfiConverterTypeCloudBackupState.read(from: &buf), 
+            try CloudBackupState(
+                status: FfiConverterTypeCloudBackupStatus.read(from: &buf), 
                 progress: FfiConverterOptionTypeCloudBackupProgress.read(from: &buf), 
                 restoreReport: FfiConverterOptionTypeCloudBackupRestoreReport.read(from: &buf), 
                 syncError: FfiConverterOptionString.read(from: &buf), 
@@ -13170,8 +13170,8 @@ public struct FfiConverterTypeCloudBackupSnapshot: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: CloudBackupSnapshot, into buf: inout [UInt8]) {
-        FfiConverterTypeCloudBackupState.write(value.state, into: &buf)
+    public static func write(_ value: CloudBackupState, into buf: inout [UInt8]) {
+        FfiConverterTypeCloudBackupStatus.write(value.status, into: &buf)
         FfiConverterOptionTypeCloudBackupProgress.write(value.progress, into: &buf)
         FfiConverterOptionTypeCloudBackupRestoreReport.write(value.restoreReport, into: &buf)
         FfiConverterOptionString.write(value.syncError, into: &buf)
@@ -13191,15 +13191,15 @@ public struct FfiConverterTypeCloudBackupSnapshot: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudBackupSnapshot_lift(_ buf: RustBuffer) throws -> CloudBackupSnapshot {
-    return try FfiConverterTypeCloudBackupSnapshot.lift(buf)
+public func FfiConverterTypeCloudBackupState_lift(_ buf: RustBuffer) throws -> CloudBackupState {
+    return try FfiConverterTypeCloudBackupState.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudBackupSnapshot_lower(_ value: CloudBackupSnapshot) -> RustBuffer {
-    return FfiConverterTypeCloudBackupSnapshot.lower(value)
+public func FfiConverterTypeCloudBackupState_lower(_ value: CloudBackupState) -> RustBuffer {
+    return FfiConverterTypeCloudBackupState.lower(value)
 }
 
 
@@ -18097,7 +18097,7 @@ public func FfiConverterTypeCloudBackupDetailResult_lower(_ value: CloudBackupDe
 public enum CloudBackupReconcileMessage: Equatable, Hashable {
     
     case updated
-    case stateChanged(CloudBackupState
+    case statusChanged(CloudBackupStatus
     )
     case progressUpdated(completed: UInt32, total: UInt32
     )
@@ -18133,7 +18133,7 @@ public struct FfiConverterTypeCloudBackupReconcileMessage: FfiConverterRustBuffe
         
         case 1: return .updated
         
-        case 2: return .stateChanged(try FfiConverterTypeCloudBackupState.read(from: &buf)
+        case 2: return .statusChanged(try FfiConverterTypeCloudBackupStatus.read(from: &buf)
         )
         
         case 3: return .progressUpdated(completed: try FfiConverterUInt32.read(from: &buf), total: try FfiConverterUInt32.read(from: &buf)
@@ -18166,9 +18166,9 @@ public struct FfiConverterTypeCloudBackupReconcileMessage: FfiConverterRustBuffe
             writeInt(&buf, Int32(1))
         
         
-        case let .stateChanged(v1):
+        case let .statusChanged(v1):
             writeInt(&buf, Int32(2))
-            FfiConverterTypeCloudBackupState.write(v1, into: &buf)
+            FfiConverterTypeCloudBackupStatus.write(v1, into: &buf)
             
         
         case let .progressUpdated(completed,total):
@@ -18226,7 +18226,7 @@ public func FfiConverterTypeCloudBackupReconcileMessage_lower(_ value: CloudBack
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
-public enum CloudBackupState: Equatable, Hashable {
+public enum CloudBackupStatus: Equatable, Hashable {
     
     case disabled
     case enabling
@@ -18243,16 +18243,16 @@ public enum CloudBackupState: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension CloudBackupState: Sendable {}
+extension CloudBackupStatus: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeCloudBackupState: FfiConverterRustBuffer {
-    typealias SwiftType = CloudBackupState
+public struct FfiConverterTypeCloudBackupStatus: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupStatus
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupState {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupStatus {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
@@ -18273,7 +18273,7 @@ public struct FfiConverterTypeCloudBackupState: FfiConverterRustBuffer {
         }
     }
 
-    public static func write(_ value: CloudBackupState, into buf: inout [UInt8]) {
+    public static func write(_ value: CloudBackupStatus, into buf: inout [UInt8]) {
         switch value {
         
         
@@ -18309,15 +18309,15 @@ public struct FfiConverterTypeCloudBackupState: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudBackupState_lift(_ buf: RustBuffer) throws -> CloudBackupState {
-    return try FfiConverterTypeCloudBackupState.lift(buf)
+public func FfiConverterTypeCloudBackupStatus_lift(_ buf: RustBuffer) throws -> CloudBackupStatus {
+    return try FfiConverterTypeCloudBackupStatus.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudBackupState_lower(_ value: CloudBackupState) -> RustBuffer {
-    return FfiConverterTypeCloudBackupState.lower(value)
+public func FfiConverterTypeCloudBackupStatus_lower(_ value: CloudBackupStatus) -> RustBuffer {
+    return FfiConverterTypeCloudBackupStatus.lower(value)
 }
 
 
@@ -34702,7 +34702,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_backup_wallet_count() != 17456) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_rustcloudbackupmanager_current_state() != 41818) {
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_current_status() != 9796) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_debug_reset_cloud_backup_state() != 45375) {
@@ -34738,7 +34738,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_resume_pending_cloud_upload_verification() != 24590) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_rustcloudbackupmanager_snapshot() != 8840) {
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_state() != 8780) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustcloudbackupmanager_sync_persisted_state() != 19758) {

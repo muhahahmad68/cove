@@ -27,65 +27,65 @@ final class CloudBackupManager: AnyReconciler, CloudBackupManagerReconciler, @un
         rust.listenForUpdates(reconciler: WeakReconciler(self))
     }
 
-    private var currentSnapshot: CloudBackupSnapshot {
+    private var currentState: CloudBackupState {
         _ = revision
-        return rust.snapshot()
-    }
-
-    var snapshot: CloudBackupSnapshot {
-        currentSnapshot
+        return rust.state()
     }
 
     var state: CloudBackupState {
-        currentSnapshot.state
+        currentState
+    }
+
+    var status: CloudBackupStatus {
+        currentState.status
     }
 
     var progress: (completed: UInt32, total: UInt32)? {
-        currentSnapshot.progress.map { ($0.completed, $0.total) }
+        currentState.progress.map { ($0.completed, $0.total) }
     }
 
     var restoreReport: CloudBackupRestoreReport? {
-        currentSnapshot.restoreReport
+        currentState.restoreReport
     }
 
     var syncError: String? {
-        currentSnapshot.syncError
+        currentState.syncError
     }
 
     var hasPendingUploadVerification: Bool {
-        currentSnapshot.hasPendingUploadVerification
+        currentState.hasPendingUploadVerification
     }
 
     var isUnverified: Bool {
-        currentSnapshot.isUnverified
+        currentState.isUnverified
     }
 
     var isConfigured: Bool {
-        currentSnapshot.isConfigured
+        currentState.isConfigured
     }
 
     var detail: CloudBackupDetail? {
-        currentSnapshot.detail
+        currentState.detail
     }
 
     var verification: VerificationState {
-        currentSnapshot.verification
+        currentState.verification
     }
 
     var sync: SyncState {
-        currentSnapshot.sync
+        currentState.sync
     }
 
     var recovery: RecoveryState {
-        currentSnapshot.recovery
+        currentState.recovery
     }
 
     var cloudOnly: CloudOnlyState {
-        currentSnapshot.cloudOnly
+        currentState.cloudOnly
     }
 
     var cloudOnlyOperation: CloudOnlyOperation {
-        currentSnapshot.cloudOnlyOperation
+        currentState.cloudOnlyOperation
     }
 
     func enableCloudBackup() {
@@ -143,7 +143,7 @@ final class CloudBackupManager: AnyReconciler, CloudBackupManagerReconciler, @un
     private func apply(_ message: Message) {
         switch message {
         case .updated,
-             .stateChanged,
+             .statusChanged,
              .progressUpdated,
              .enableComplete,
              .restoreComplete,

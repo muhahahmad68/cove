@@ -261,7 +261,7 @@ struct DeviceRestoreView: View {
                 return
             }
 
-            let currentState = backupManager.state
+            let currentStatus = backupManager.status
             let currentProgress = backupManager.progress
             let report = backupManager.restoreReport
 
@@ -269,7 +269,7 @@ struct DeviceRestoreView: View {
                 self.phase = .restoring(progress: currentProgress)
             }
 
-            switch currentState {
+            switch currentStatus {
             case .enabled:
                 if let report {
                     // show progress at 100% before transitioning

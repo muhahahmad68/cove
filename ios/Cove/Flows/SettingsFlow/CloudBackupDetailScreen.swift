@@ -25,7 +25,7 @@ struct CloudBackupDetailScreen: View {
     }
 
     private var isPasskeyMissing: Bool {
-        if case .passkeyMissing = manager.state { return true }
+        if case .passkeyMissing = manager.status { return true }
         return false
     }
 

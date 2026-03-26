@@ -257,7 +257,7 @@ struct CoveMainView: View {
     }
 
     private var isCloudBackupPasskeyMissing: Bool {
-        if case .passkeyMissing = CloudBackupManager.shared.state { return true }
+        if case .passkeyMissing = CloudBackupManager.shared.status { return true }
         return false
     }
 

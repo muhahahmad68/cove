@@ -261,7 +261,7 @@ struct MainSettingsScreen: View {
             @Bindable var manager = CloudBackupManager.shared
 
             Section(header: Text("Cloud Backup")) {
-                switch manager.state {
+                switch manager.status {
                 case .disabled:
                     SettingsRow(title: "Enable Cloud Backup", symbol: "icloud.and.arrow.up") {
                         manager.enableCloudBackup()

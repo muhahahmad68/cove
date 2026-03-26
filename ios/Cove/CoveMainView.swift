@@ -18,6 +18,9 @@ struct CoveMainView: View {
     @State var showCover: Bool = true
     @State var scannedCode: TaggedItem<MultiFormat>? = .none
     @State var coverClearTask: Task<Void, Never>?
+    @State private var showMissingPasskeyAlert = false
+    @State private var pendingMissingPasskeyAlert = false
+    @State private var backgroundEnteredAt: Date?
 
     @ViewBuilder
     private func alertMessage(alert: TaggedItem<AppAlertState>) -> some View {
@@ -247,6 +250,15 @@ struct CoveMainView: View {
                 }
             }
         )
+    }
+
+    private var canPresentMissingPasskeyAlert: Bool {
+        phase == .active && !showCover && app.alertState == nil && app.sheetState == nil
+    }
+
+    private var isCloudBackupPasskeyMissing: Bool {
+        if case .passkeyMissing = CloudBackupManager.shared.state { return true }
+        return false
     }
 
     var navBarColor: Color {
@@ -624,6 +636,7 @@ struct CoveMainView: View {
             guard app.asyncRuntimeReady else { return }
             app.dispatch(action: AppAction.updateFees)
             app.dispatch(action: AppAction.updateFiatPrices)
+            scheduleMissingPasskeyAlert()
         }
 
         // PIN auth active, no biometrics, leaving app
@@ -652,6 +665,10 @@ struct CoveMainView: View {
 
                 if phase == .active { showCover = false }
             }
+        }
+
+        if newPhase == .background {
+            backgroundEnteredAt = Date.now
         }
 
         // close all open sheets when going into the background
@@ -708,6 +725,46 @@ struct CoveMainView: View {
         }
     }
 
+    private func scheduleMissingPasskeyAlert() {
+        guard isCloudBackupPasskeyMissing else {
+            pendingMissingPasskeyAlert = false
+            showMissingPasskeyAlert = false
+            return
+        }
+
+        // only show if app was in the background for more than 1 second,
+        // avoids false triggers from brief transitions like the passkey picker
+        if let backgroundEnteredAt,
+           Date.now.timeIntervalSince(backgroundEnteredAt) < 1
+        {
+            return
+        }
+
+        guard canPresentMissingPasskeyAlert else {
+            pendingMissingPasskeyAlert = true
+            return
+        }
+
+        pendingMissingPasskeyAlert = false
+        showMissingPasskeyAlert = true
+    }
+
+    private func dismissMissingPasskeyAlert() {
+        pendingMissingPasskeyAlert = false
+        showMissingPasskeyAlert = false
+    }
+
+    private func openCloudBackupScreen() {
+        dismissMissingPasskeyAlert()
+
+        let route = Route.settings(.cloudBackup)
+        if app.currentRoute.isEqual(routeToCheck: route) {
+            return
+        }
+
+        app.pushRoute(route)
+    }
+
     var body: some View {
         BodyView
             .id(id)
@@ -729,8 +786,38 @@ struct CoveMainView: View {
                 actions: alertButtons,
                 message: alertMessage
             )
+            .alert(
+                "Cloud Backup Passkey Missing",
+                isPresented: $showMissingPasskeyAlert
+            ) {
+                Button("Open Cloud Backup") {
+                    openCloudBackupScreen()
+                }
+                Button("Not Now", role: .cancel) {
+                    dismissMissingPasskeyAlert()
+                }
+            } message: {
+                Text(
+                    "Add a new passkey to restore access to your cloud backup. Until you do, your backups can't be restored."
+                )
+            }
             .sheet(item: $app.sheetState, content: SheetContent)
             .onOpenURL(perform: handleFileOpen)
             .onChange(of: phase, initial: true, handleScenePhaseChange)
+            .onChange(of: showCover) { _, isShowing in
+                if !isShowing, pendingMissingPasskeyAlert {
+                    scheduleMissingPasskeyAlert()
+                }
+            }
+            .onChange(of: app.alertState) { _, alertState in
+                if alertState == nil, pendingMissingPasskeyAlert {
+                    scheduleMissingPasskeyAlert()
+                }
+            }
+            .onChange(of: app.sheetState) { _, sheetState in
+                if sheetState == nil, pendingMissingPasskeyAlert {
+                    scheduleMissingPasskeyAlert()
+                }
+            }
     }
 }

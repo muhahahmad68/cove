@@ -679,6 +679,10 @@ struct CoveMainView: View {
             }
         }
 
+        if newPhase == .background {
+            app.isSidebarVisible = false
+        }
+
         // close all open sheets when going into the background
         if auth.isAuthEnabled, newPhase == .background {
             Log.debug("[scene] app going into background")

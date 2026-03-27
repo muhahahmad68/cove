@@ -25,6 +25,27 @@ struct SidebarContainer<Content: View>: View {
         return max(min(translation, 0), -sideBarWidth)
     }
 
+    private func syncSidebarState(isVisible: Bool) {
+        offset = isVisible ? sideBarWidth : 0
+        dragTranslation = 0
+        dragStartedWithSidebarOpen = isVisible
+        isDragging = false
+    }
+
+    private func updateSidebarState(isVisible: Bool, animated: Bool = true) {
+        let update = {
+            syncSidebarState(isVisible: isVisible)
+        }
+
+        if animated {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8), update)
+        } else {
+            update()
+        }
+
+        app.isSidebarVisible = isVisible
+    }
+
     private func onDragEnded(value: DragGesture.Value) {
         // if sidebar was closed programmatically during this gesture
         // (onChange already reset offset and dragTranslation to 0),
@@ -57,13 +78,10 @@ struct SidebarContainer<Content: View>: View {
                 // this prevents accidental closes from small drags with high predicted velocity
                 if offset < closeThreshold, predictedFinalOffset < closeThreshold {
                     // snap to closed
-                    offset = 0
-                    app.isSidebarVisible = false
-                    dragStartedWithSidebarOpen = false
+                    updateSidebarState(isVisible: false, animated: false)
                 } else {
                     // snap back to open
-                    offset = sideBarWidth
-                    app.isSidebarVisible = true
+                    updateSidebarState(isVisible: true, animated: false)
                 }
             }
 
@@ -72,17 +90,12 @@ struct SidebarContainer<Content: View>: View {
                 // started closed - opening requires dragging past 30% (84px for 280px width)
                 if offset > threshold || predictedEnd > threshold {
                     // snap to open
-                    offset = sideBarWidth
-                    app.isSidebarVisible = true
-                    dragStartedWithSidebarOpen = true
+                    updateSidebarState(isVisible: true, animated: false)
                 } else {
                     // snap back to closed
-                    offset = 0
-                    app.isSidebarVisible = false
+                    updateSidebarState(isVisible: false, animated: false)
                 }
             }
-
-            isDragging = false
         }
     }
 
@@ -107,12 +120,7 @@ struct SidebarContainer<Content: View>: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(openPercentage * 0.45)
                     .onTapGesture {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            offset = 0
-                            dragTranslation = 0
-                            app.isSidebarVisible = false
-                            dragStartedWithSidebarOpen = false
-                        }
+                        updateSidebarState(isVisible: false)
                     }
                     .gesture(
                         DragGesture(minimumDistance: 5)
@@ -185,8 +193,7 @@ struct SidebarContainer<Content: View>: View {
             }
         }
         .onAppear {
-            offset = app.isSidebarVisible ? sideBarWidth : 0
-            dragStartedWithSidebarOpen = app.isSidebarVisible
+            syncSidebarState(isVisible: app.isSidebarVisible)
         }
         .onChange(of: app.isSidebarVisible) { _, isVisible in
             if isVisible {
@@ -200,13 +207,9 @@ struct SidebarContainer<Content: View>: View {
                 isDragging = false
             }
 
-            guard !isDragging else { return }
+            if isVisible, isDragging { return }
 
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                offset = isVisible ? sideBarWidth : 0
-                dragTranslation = 0
-                dragStartedWithSidebarOpen = isVisible
-            }
+            updateSidebarState(isVisible: isVisible)
         }
     }
 }

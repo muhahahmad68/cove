@@ -21,6 +21,7 @@ struct CoveMainView: View {
     @State private var showMissingPasskeyAlert = false
     @State private var showCloudBackupVerificationPrompt = false
     @State private var pendingMissingPasskeyAlert = false
+    @State private var keepShowingCloudBackupVerificationPrompt = false
 
     @ViewBuilder
     private func alertMessage(alert: TaggedItem<AppAlertState>) -> some View {
@@ -775,6 +776,16 @@ struct CoveMainView: View {
     }
 
     private func scheduleCloudBackupVerificationPrompt() {
+        if keepShowingCloudBackupVerificationPrompt {
+            guard canPresentCloudBackupVerificationPrompt else {
+                showCloudBackupVerificationPrompt = false
+                return
+            }
+
+            showCloudBackupVerificationPrompt = true
+            return
+        }
+
         guard CloudBackupManager.shared.shouldPromptVerification else {
             showCloudBackupVerificationPrompt = false
             return
@@ -789,13 +800,32 @@ struct CoveMainView: View {
     }
 
     private func dismissCloudBackupVerificationPrompt() {
+        keepShowingCloudBackupVerificationPrompt = false
         showCloudBackupVerificationPrompt = false
         CloudBackupManager.shared.dismissVerificationPrompt()
     }
 
     private func startCloudBackupVerification() {
-        showCloudBackupVerificationPrompt = false
+        keepShowingCloudBackupVerificationPrompt = true
         CloudBackupManager.shared.startVerification()
+    }
+
+    private func handleCloudBackupVerificationChange(_ verification: VerificationState) {
+        switch verification {
+        case .verified, .passkeyConfirmed, .cancelled:
+            keepShowingCloudBackupVerificationPrompt = false
+            showCloudBackupVerificationPrompt = false
+        case .failed:
+            keepShowingCloudBackupVerificationPrompt = true
+            scheduleCloudBackupVerificationPrompt()
+        case .verifying:
+            keepShowingCloudBackupVerificationPrompt = true
+            scheduleCloudBackupVerificationPrompt()
+        case .idle:
+            if !CloudBackupManager.shared.shouldPromptVerification {
+                keepShowingCloudBackupVerificationPrompt = false
+            }
+        }
     }
 
     private func openCloudBackupScreen() {
@@ -845,26 +875,19 @@ struct CoveMainView: View {
                     "Add a new passkey to restore access to your cloud backup. Until you do, your backups can't be restored."
                 )
             }
-            .alert(
-                "Verify Cloud Backup",
-                isPresented: $showCloudBackupVerificationPrompt
-            ) {
-                Button("Verify Now") {
-                    startCloudBackupVerification()
-                }
-                Button("Later", role: .cancel) {
-                    dismissCloudBackupVerificationPrompt()
-                }
-            } message: {
-                Text(
-                    "You added or imported a wallet. Verify cloud backup now to confirm the updated backup is accessible. Continuing may ask for your passkey."
+            .fullScreenCover(isPresented: $showCloudBackupVerificationPrompt) {
+                CloudBackupVerificationPromptView(
+                    onDismiss: dismissCloudBackupVerificationPrompt,
+                    onVerify: startCloudBackupVerification
                 )
+                .interactiveDismissDisabled(true)
             }
             .sheet(item: $app.sheetState, content: SheetContent)
             .onOpenURL(perform: handleFileOpen)
             .onChange(of: phase, initial: true, handleScenePhaseChange)
             .onChange(of: CloudBackupManager.shared.status) { _, status in
                 if case .passkeyMissing = status {
+                    keepShowingCloudBackupVerificationPrompt = false
                     scheduleMissingPasskeyAlert()
                     showCloudBackupVerificationPrompt = false
                 } else {
@@ -878,6 +901,9 @@ struct CoveMainView: View {
                 } else if isCloudBackupPasskeyMissing {
                     scheduleMissingPasskeyAlert()
                 }
+            }
+            .onChange(of: CloudBackupManager.shared.verification) { _, verification in
+                handleCloudBackupVerificationChange(verification)
             }
             .onChange(of: app.router.routes) { _, _ in
                 if isViewingCloudBackup {
@@ -928,9 +954,145 @@ struct CoveMainView: View {
             .onChange(of: CloudBackupManager.shared.shouldPromptVerification) { _, shouldPrompt in
                 if shouldPrompt {
                     scheduleCloudBackupVerificationPrompt()
-                } else {
+                } else if !keepShowingCloudBackupVerificationPrompt {
                     showCloudBackupVerificationPrompt = false
                 }
             }
+    }
+}
+
+private struct CloudBackupVerificationPromptView: View {
+    @State private var manager = CloudBackupManager.shared
+
+    let onDismiss: () -> Void
+    let onVerify: () -> Void
+
+    private var isVerifying: Bool {
+        if case .verifying = manager.verification { return true }
+        return false
+    }
+
+    private var failure: DeepVerificationFailure? {
+        guard !manager.shouldPromptVerification else { return nil }
+        if case let .failed(failure) = manager.verification { return failure }
+        return nil
+    }
+
+    private var title: String {
+        if isVerifying {
+            return "Verifying Cloud Backup"
+        }
+
+        if failure != nil {
+            return "Verification Failed"
+        }
+
+        return "Verify"
+    }
+
+    private var message: String {
+        if let failure {
+            return failure.message
+        }
+
+        if isVerifying {
+            return "Confirming your updated cloud backup can be decrypted and restored. Continuing may ask for your passkey."
+        }
+
+        return "Verify your updated cloud backup now to confirm it is accessible. Continuing may ask for your passkey."
+    }
+
+    private var primaryButtonTitle: String {
+        failure == nil ? "Verify" : "Try Again"
+    }
+
+    private var iconName: String {
+        failure == nil ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
+    }
+
+    private var iconColor: Color {
+        failure == nil ? .btnPrimary : .orange
+    }
+
+    var body: some View {
+        VStack(spacing: 24) {
+            HStack {
+                Spacer()
+
+                if !isVerifying {
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.headline)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .frame(width: 44, height: 44)
+                    }
+                }
+            }
+
+            Spacer()
+
+            if isVerifying {
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(1.2)
+                    .padding(.bottom, 12)
+            } else {
+                Image(systemName: iconName)
+                    .font(.system(size: screenWidth * 0.32))
+                    .fontWeight(.light)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(iconColor)
+            }
+
+            Spacer()
+
+            HStack {
+                DotMenuView(selected: 3, size: 5)
+                Spacer()
+            }
+
+            VStack(spacing: 12) {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 38, weight: .semibold))
+                        .foregroundStyle(.white)
+
+                    Spacer()
+                }
+
+                HStack {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.coveLightGray.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer()
+                }
+            }
+
+            Divider()
+                .overlay(Color.coveLightGray.opacity(0.50))
+
+            VStack(spacing: 12) {
+                if !isVerifying {
+                    Button(primaryButtonTitle, action: onVerify)
+                        .buttonStyle(PrimaryButtonStyle())
+
+                    Button("Later", action: onDismiss)
+                        .buttonStyle(DarkButtonStyle())
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            Image(.newWalletPattern)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: screenHeight * 0.75, alignment: .topTrailing)
+                .frame(maxWidth: .infinity)
+                .opacity(0.5)
+        )
+        .background(Color.midnightBlue)
     }
 }

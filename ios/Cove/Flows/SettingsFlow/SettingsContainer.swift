@@ -66,9 +66,7 @@ struct SettingsContainer: View {
             case .about:
                 AboutScreen()
             case .cloudBackup:
-                if CloudBackupManager.shared.isConfigured {
-                    CloudBackupDetailScreen()
-                }
+                CloudBackupDetailScreen()
             }
         }
         .navigationBarTitleDisplayMode(.inline)

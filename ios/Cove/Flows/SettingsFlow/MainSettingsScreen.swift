@@ -270,9 +270,12 @@ struct MainSettingsScreen: View {
                     }
                 case .enabling:
                     HStack {
-                        ProgressView()
-                            .padding(.trailing, 8)
+                        SettingsIcon(symbol: "icloud.and.arrow.up")
                         Text("Setting up cloud backup...")
+                            .font(.subheadline)
+                            .padding(8)
+                        Spacer()
+                        ProgressView()
                     }
                 case .enabled:
                     HStack {

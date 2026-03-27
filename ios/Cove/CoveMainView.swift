@@ -1006,16 +1006,20 @@ private struct CloudBackupVerificationPromptView: View {
         failure == nil ? "Verify" : "Try Again"
     }
 
-    private var iconName: String {
+    private var heroIconName: String {
         failure == nil ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
     }
 
-    private var iconColor: Color {
-        failure == nil ? .btnPrimary : .orange
+    private var heroTint: Color {
+        failure == nil ? .btnGradientLight : .orange
+    }
+
+    private var heroFillColor: Color {
+        failure == nil ? Color.duskBlue.opacity(0.42) : Color.orange.opacity(0.12)
     }
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
 
@@ -1028,28 +1032,15 @@ private struct CloudBackupVerificationPromptView: View {
                     }
                 }
             }
+            .padding(.top, 4)
 
             Spacer()
+                .frame(height: 20)
 
-            if isVerifying {
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(1.2)
-                    .padding(.bottom, 12)
-            } else {
-                Image(systemName: iconName)
-                    .font(.system(size: screenWidth * 0.32))
-                    .fontWeight(.light)
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(iconColor)
-            }
+            heroView
 
             Spacer()
-
-            HStack {
-                DotMenuView(selected: 3, size: 5)
-                Spacer()
-            }
+                .frame(height: 36)
 
             VStack(spacing: 12) {
                 HStack {
@@ -1062,37 +1053,59 @@ private struct CloudBackupVerificationPromptView: View {
 
                 HStack {
                     Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.coveLightGray.opacity(0.75))
+                        .font(OnboardingRecoveryTypography.body)
+                        .foregroundStyle(.coveLightGray.opacity(0.76))
                         .fixedSize(horizontal: false, vertical: true)
 
                     Spacer()
                 }
             }
 
-            Divider()
-                .overlay(Color.coveLightGray.opacity(0.50))
+            Spacer()
+                .frame(height: 28)
 
-            VStack(spacing: 12) {
-                if !isVerifying {
+            Divider()
+                .overlay(Color.coveLightGray.opacity(0.14))
+
+            Spacer(minLength: 24)
+
+            if !isVerifying {
+                VStack(spacing: 14) {
                     Button(primaryButtonTitle, action: onVerify)
-                        .buttonStyle(PrimaryButtonStyle())
+                        .buttonStyle(OnboardingPrimaryButtonStyle())
 
                     Button("Later", action: onDismiss)
-                        .buttonStyle(DarkButtonStyle())
+                        .buttonStyle(OnboardingSecondaryButtonStyle())
                 }
             }
+
+            Spacer(minLength: 0)
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            Image(.newWalletPattern)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(height: screenHeight * 0.75, alignment: .topTrailing)
-                .frame(maxWidth: .infinity)
-                .opacity(0.5)
-        )
-        .background(Color.midnightBlue)
+        .padding(.horizontal, 28)
+        .padding(.bottom, 28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onboardingRecoveryBackground()
+        .animation(.easeInOut(duration: 0.25), value: isVerifying)
+        .animation(.easeInOut(duration: 0.25), value: failure != nil)
+    }
+
+    @ViewBuilder
+    private var heroView: some View {
+        if isVerifying {
+            OnboardingStatusHero(
+                systemImage: heroIconName,
+                tint: heroTint,
+                fillColor: heroFillColor,
+                pulse: true,
+                iconSize: 22
+            )
+        } else {
+            OnboardingStatusHero(
+                systemImage: heroIconName,
+                tint: heroTint,
+                fillColor: heroFillColor,
+                iconSize: failure == nil ? 22 : 24
+            )
+        }
     }
 }

@@ -29,6 +29,10 @@ struct CloudBackupDetailScreen: View {
         return false
     }
 
+    private var shouldShowLoadingState: Bool {
+        manager.detail == nil && !isVerifying && !hasVerificationResult && !isCancelled
+    }
+
     var body: some View {
         Form {
             if isPasskeyMissing {
@@ -48,6 +52,19 @@ struct CloudBackupDetailScreen: View {
                         syncHealth: syncHealth,
                         manager: manager
                     )
+                } else if shouldShowLoadingState {
+                    Section {
+                        VStack(spacing: 12) {
+                            ProgressView("Loading cloud backup...")
+
+                            Text("Finishing setup and fetching backup details")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    }
                 }
 
                 VerificationSection(

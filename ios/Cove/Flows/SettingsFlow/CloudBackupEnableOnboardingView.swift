@@ -134,15 +134,8 @@ struct CloudBackupEnableOnboardingView: View {
                         if allChecked { onEnable() }
                     } label: {
                         Text("Enable Cloud Backup")
-                            .font(.footnote)
-                            .fontWeight(.medium)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 20)
-                            .padding(.horizontal, 10)
-                            .background(allChecked ? Color.blue : Color.blue.opacity(0.3))
-                            .foregroundStyle(allChecked ? .white : .white.opacity(0.4))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
+                    .buttonStyle(OnboardingPrimaryButtonStyle())
                     .disabled(!allChecked)
                     .animation(.easeInOut(duration: 0.2), value: allChecked)
 

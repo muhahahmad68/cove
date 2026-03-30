@@ -4587,7 +4587,8 @@ public func FfiConverterTypeUtxo_lower(_ value: Utxo) -> RustBuffer {
 }
 
 
-public enum AddressError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum AddressError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -4696,8 +4697,7 @@ public func FfiConverterTypeAddressError_lower(_ value: AddressError) -> RustBuf
     return FfiConverterTypeAddressError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum BitcoinUnit: Equatable, Hashable, CustomStringConvertible {
     
@@ -4773,8 +4773,7 @@ public func FfiConverterTypeBitcoinUnit_lower(_ value: BitcoinUnit) -> RustBuffe
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ColorSchemeSelection: Equatable, Hashable {
     
@@ -4856,7 +4855,8 @@ public func FfiConverterTypeColorSchemeSelection_lower(_ value: ColorSchemeSelec
 
 
 
-public enum ConfirmDetailsError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum ConfirmDetailsError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -4929,8 +4929,7 @@ public func FfiConverterTypeConfirmDetailsError_lower(_ value: ConfirmDetailsErr
     return FfiConverterTypeConfirmDetailsError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum FeeSpeed: Equatable, Hashable, CustomStringConvertible {
     
@@ -5023,8 +5022,7 @@ public func FfiConverterTypeFeeSpeed_lower(_ value: FeeSpeed) -> RustBuffer {
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum FfiColor: Equatable, Hashable {
     
@@ -5197,8 +5195,7 @@ public func FfiConverterTypeFfiColor_lower(_ value: FfiColor) -> RustBuffer {
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum FfiColorScheme: Equatable, Hashable {
     
@@ -5264,8 +5261,7 @@ public func FfiConverterTypeFfiColorScheme_lower(_ value: FfiColorScheme) -> Rus
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum Network: Equatable, Hashable, CustomStringConvertible {
     
@@ -5364,7 +5360,8 @@ public func FfiConverterTypeNetwork_lower(_ value: Network) -> RustBuffer {
 
 
 
-public enum PsbtError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum PsbtError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -5455,8 +5452,7 @@ public func FfiConverterTypePsbtError_lower(_ value: PsbtError) -> RustBuffer {
     return FfiConverterTypePsbtError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * QR code export format for PSBTs
  */
@@ -5541,8 +5537,7 @@ public func FfiConverterTypeQrExportFormat_lower(_ value: QrExportFormat) -> Rus
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum TransactionDirection: Equatable, Hashable {
     
@@ -5608,8 +5603,7 @@ public func FfiConverterTypeTransactionDirection_lower(_ value: TransactionDirec
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum UtxoType: Equatable, Hashable {
     

@@ -92,7 +92,6 @@ struct HotWalletSelectScreen: View {
             }
         }
         .padding()
-        .navigationBarTitleDisplayMode(.inline)
         .frame(maxHeight: .infinity)
         .background(
             Image(.newWalletPattern)
@@ -103,14 +102,9 @@ struct HotWalletSelectScreen: View {
                 .brightness(0.05)
         )
         .background(Color.midnightBlue)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Add New Wallet")
-                    .font(.callout)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
-            }
-        }
+        .navigationTitle("Add New Wallet")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 

@@ -8150,6 +8150,8 @@ public protocol RustWalletManagerProtocol: AnyObject, Sendable {
     
     func getUnsignedTransactions() throws  -> [UnsignedTransaction]
     
+    func initialLoadState()  -> WalletLoadState
+    
     func labelManager()  -> LabelManager
     
     func listenForUpdates(reconciler: WalletManagerReconciler) 
@@ -8781,6 +8783,14 @@ open func getTransactions()async   {
 open func getUnsignedTransactions()throws  -> [UnsignedTransaction]  {
     return try  FfiConverterSequenceTypeUnsignedTransaction.lift(try rustCallWithError(FfiConverterTypeWalletManagerError_lift) {
     uniffi_cove_fn_method_rustwalletmanager_get_unsigned_transactions(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func initialLoadState() -> WalletLoadState  {
+    return try!  FfiConverterTypeWalletLoadState_lift(try! rustCall() {
+    uniffi_cove_fn_method_rustwalletmanager_initial_load_state(
             self.uniffiCloneHandle(),$0
     )
 })
@@ -9544,23 +9554,7 @@ open class TapSignerReader: TapSignerReaderProtocol, @unchecked Sendable {
     public func uniffiCloneHandle() -> UInt64 {
         return try! rustCall { uniffi_cove_fn_clone_tapsignerreader(self.handle, $0) }
     }
-public convenience init(transport: TapcardTransportProtocol, cmd: TapSignerCmd? = nil)async throws  {
-    let handle =
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_cove_fn_constructor_tapsignerreader_new(FfiConverterCallbackInterfaceTapcardTransportProtocol_lower(transport),FfiConverterOptionTypeTapSignerCmd.lower(cmd)
-                )
-            },
-            pollFunc: ffi_cove_rust_future_poll_u64,
-            completeFunc: ffi_cove_rust_future_complete_u64,
-            freeFunc: ffi_cove_rust_future_free_u64,
-            liftFunc: FfiConverterTypeTapSignerReader_lift,
-            errorHandler: FfiConverterTypeTapSignerReaderError_lift
-        )
-        
-        .uniffiCloneHandle()
-    self.init(unsafeFromHandle: handle)
-}
+    // No primary constructor declared for this class.
 
     deinit {
         if handle == 0 {
@@ -13871,7 +13865,7 @@ public struct WalletMetadata: Equatable, Hashable {
      */
     public var hardwareMetadata: HardwareWalletMetadata?
     /**
-     * Show labels for transactions i the transaction list
+     * Show labels for transactions in the transaction list
      * If false, we only show either `Sent` or `Received` labels
      */
     public var showLabels: Bool
@@ -13884,7 +13878,7 @@ public struct WalletMetadata: Equatable, Hashable {
          * Metadata data specific to different hardware wallets
          */hardwareMetadata: HardwareWalletMetadata?, 
         /**
-         * Show labels for transactions i the transaction list
+         * Show labels for transactions in the transaction list
          * If false, we only show either `Sent` or `Received` labels
          */showLabels: Bool, `internal`: InternalOnlyMetadata) {
         self.id = id
@@ -14163,8 +14157,7 @@ public func FfiConverterTypeXpubExportResult_lower(_ value: XpubExportResult) ->
     return FfiConverterTypeXpubExportResult.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AfterPinAction {
     
@@ -14255,8 +14248,7 @@ public func FfiConverterTypeAfterPinAction_lower(_ value: AfterPinAction) -> Rus
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AlertDisplayType: Equatable, Hashable {
     
@@ -14322,8 +14314,7 @@ public func FfiConverterTypeAlertDisplayType_lower(_ value: AlertDisplayType) ->
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AmountOrMax {
     
@@ -14392,8 +14383,7 @@ public func FfiConverterTypeAmountOrMax_lower(_ value: AmountOrMax) -> RustBuffe
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ApiType: Equatable, Hashable {
     
@@ -14466,8 +14456,7 @@ public func FfiConverterTypeApiType_lower(_ value: ApiType) -> RustBuffer {
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AppAction {
     
@@ -14614,8 +14603,7 @@ public func FfiConverterTypeAppAction_lower(_ value: AppAction) -> RustBuffer {
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AppAlertState {
     
@@ -14994,7 +14982,8 @@ public func FfiConverterTypeAppAlertState_lower(_ value: AppAlertState) -> RustB
 
 
 
-public enum AppError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum AppError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -15088,7 +15077,8 @@ public func FfiConverterTypeAppError_lower(_ value: AppError) -> RustBuffer {
 }
 
 
-public enum AppInitError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum AppInitError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -15209,8 +15199,7 @@ public func FfiConverterTypeAppInitError_lower(_ value: AppInitError) -> RustBuf
     return FfiConverterTypeAppInitError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AppStateReconcileMessage {
     
@@ -15409,7 +15398,8 @@ public func FfiConverterTypeAppStateReconcileMessage_lower(_ value: AppStateReco
 
 
 
-public enum AuthError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum AuthError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -15532,8 +15522,7 @@ public func FfiConverterTypeAuthError_lower(_ value: AuthError) -> RustBuffer {
     return FfiConverterTypeAuthError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AuthManagerAction: Equatable, Hashable {
     
@@ -15641,7 +15630,8 @@ public func FfiConverterTypeAuthManagerAction_lower(_ value: AuthManagerAction) 
 
 
 
-public enum AuthManagerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum AuthManagerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -15744,8 +15734,7 @@ public func FfiConverterTypeAuthManagerError_lower(_ value: AuthManagerError) ->
     return FfiConverterTypeAuthManagerError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AuthManagerReconcileMessage: Equatable, Hashable {
     
@@ -15821,8 +15810,7 @@ public func FfiConverterTypeAuthManagerReconcileMessage_lower(_ value: AuthManag
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum AuthType: Equatable, Hashable {
     
@@ -15903,7 +15891,8 @@ public func FfiConverterTypeAuthType_lower(_ value: AuthType) -> RustBuffer {
 
 
 
-public enum BackupError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum BackupError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -16110,7 +16099,8 @@ public func FfiConverterTypeBackupError_lower(_ value: BackupError) -> RustBuffe
 }
 
 
-public enum Bip39Error: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum Bip39Error: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -16226,7 +16216,8 @@ public func FfiConverterTypeBip39Error_lower(_ value: Bip39Error) -> RustBuffer 
 }
 
 
-public enum BitcoinTransactionError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum BitcoinTransactionError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -16319,8 +16310,7 @@ public func FfiConverterTypeBitcoinTransactionError_lower(_ value: BitcoinTransa
     return FfiConverterTypeBitcoinTransactionError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum BootstrapStep: Equatable, Hashable {
     
@@ -16457,8 +16447,7 @@ public func FfiConverterTypeBootstrapStep_lower(_ value: BootstrapStep) -> RustB
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ButtonPresentation: Equatable, Hashable {
     
@@ -16528,7 +16517,8 @@ public func FfiConverterTypeButtonPresentation_lower(_ value: ButtonPresentation
 
 
 
-public enum ByteReaderError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum ByteReaderError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -16608,7 +16598,8 @@ public func FfiConverterTypeByteReaderError_lower(_ value: ByteReaderError) -> R
 }
 
 
-public enum CkTapError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum CkTapError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -16737,8 +16728,7 @@ public func FfiConverterTypeCkTapError_lower(_ value: CkTapError) -> RustBuffer 
     return FfiConverterTypeCkTapError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum CloudBackup: Equatable, Hashable {
     
@@ -16807,8 +16797,7 @@ public func FfiConverterTypeCloudBackup_lower(_ value: CloudBackup) -> RustBuffe
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum CoinControlListSort: Equatable, Hashable {
     
@@ -16900,8 +16889,7 @@ public func FfiConverterTypeCoinControlListSort_lower(_ value: CoinControlListSo
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum CoinControlListSortKey: Equatable, Hashable, CustomStringConvertible {
     
@@ -16991,8 +16979,7 @@ public func FfiConverterTypeCoinControlListSortKey_lower(_ value: CoinControlLis
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum CoinControlListSortState: Equatable, Hashable {
     
@@ -17064,8 +17051,7 @@ public func FfiConverterTypeCoinControlListSortState_lower(_ value: CoinControlL
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum CoinControlManagerAction {
     
@@ -17168,8 +17154,7 @@ public func FfiConverterTypeCoinControlManagerAction_lower(_ value: CoinControlM
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum CoinControlManagerReconcileMessage {
     
@@ -17289,8 +17274,7 @@ public func FfiConverterTypeCoinControlManagerReconcileMessage_lower(_ value: Co
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum CoinControlRoute: Equatable, Hashable {
     
@@ -17352,8 +17336,7 @@ public func FfiConverterTypeCoinControlRoute_lower(_ value: CoinControlRoute) ->
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ColdWalletRoute: Equatable, Hashable {
     
@@ -17413,7 +17396,8 @@ public func FfiConverterTypeColdWalletRoute_lower(_ value: ColdWalletRoute) -> R
 
 
 
-public enum ConverterError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum ConverterError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -17497,7 +17481,8 @@ public func FfiConverterTypeConverterError_lower(_ value: ConverterError) -> Rus
 }
 
 
-public enum DatabaseError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum DatabaseError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -17735,7 +17720,8 @@ public func FfiConverterTypeDatabaseError_lower(_ value: DatabaseError) -> RustB
 }
 
 
-public enum DescriptorError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum DescriptorError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -17922,8 +17908,7 @@ public func FfiConverterTypeDescriptorError_lower(_ value: DescriptorError) -> R
     return FfiConverterTypeDescriptorError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum DiscoveryState: Equatable, Hashable {
     
@@ -18057,7 +18042,8 @@ public func FfiConverterTypeDiscoveryState_lower(_ value: DiscoveryState) -> Rus
 
 
 
-public enum FiatAmountError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum FiatAmountError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -18133,8 +18119,7 @@ public func FfiConverterTypeFiatAmountError_lower(_ value: FiatAmountError) -> R
     return FfiConverterTypeFiatAmountError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum FiatCurrency: Equatable, Hashable, CustomStringConvertible {
     
@@ -18269,8 +18254,7 @@ public func FfiConverterTypeFiatCurrency_lower(_ value: FiatCurrency) -> RustBuf
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum FiatOrBtc: Equatable, Hashable {
     
@@ -18337,7 +18321,8 @@ public func FfiConverterTypeFiatOrBtc_lower(_ value: FiatOrBtc) -> RustBuffer {
 
 
 
-public enum FileHandlerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum FileHandlerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -18447,7 +18432,8 @@ public func FfiConverterTypeFileHandlerError_lower(_ value: FileHandlerError) ->
 }
 
 
-public enum FingerprintError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum FingerprintError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -18527,7 +18513,8 @@ public func FfiConverterTypeFingerprintError_lower(_ value: FingerprintError) ->
 }
 
 
-public enum GlobalCacheTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum GlobalCacheTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -18620,8 +18607,7 @@ public func FfiConverterTypeGlobalCacheTableError_lower(_ value: GlobalCacheTabl
     return FfiConverterTypeGlobalCacheTableError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum GlobalConfigKey: Equatable, Hashable {
     
@@ -18775,7 +18761,8 @@ public func FfiConverterTypeGlobalConfigKey_lower(_ value: GlobalConfigKey) -> R
 
 
 
-public enum GlobalConfigTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum GlobalConfigTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -18874,8 +18861,7 @@ public func FfiConverterTypeGlobalConfigTableError_lower(_ value: GlobalConfigTa
     return FfiConverterTypeGlobalConfigTableError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum GlobalFlagKey: Equatable, Hashable {
     
@@ -18956,7 +18942,8 @@ public func FfiConverterTypeGlobalFlagKey_lower(_ value: GlobalFlagKey) -> RustB
 
 
 
-public enum GlobalFlagTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum GlobalFlagTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -19049,8 +19036,7 @@ public func FfiConverterTypeGlobalFlagTableError_lower(_ value: GlobalFlagTableE
     return FfiConverterTypeGlobalFlagTableError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * Haptic feedback hint for the platform to trigger
  */
@@ -19135,8 +19121,7 @@ public func FfiConverterTypeHapticFeedback_lower(_ value: HapticFeedback) -> Rus
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum HardwareWalletMetadata {
     
@@ -19210,7 +19195,8 @@ public func FfiConverterTypeHardwareWalletMetadata_lower(_ value: HardwareWallet
 /**
  * Error type for `HistoricalPriceRecord`
  */
-public enum HistoricalPriceRecordError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum HistoricalPriceRecordError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -19294,7 +19280,8 @@ public func FfiConverterTypeHistoricalPriceRecordError_lower(_ value: Historical
 }
 
 
-public enum HistoricalPriceTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum HistoricalPriceTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -19393,8 +19380,7 @@ public func FfiConverterTypeHistoricalPriceTableError_lower(_ value: HistoricalP
     return FfiConverterTypeHistoricalPriceTableError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum HotWalletRoute: Equatable, Hashable {
     
@@ -19484,8 +19470,7 @@ public func FfiConverterTypeHotWalletRoute_lower(_ value: HotWalletRoute) -> Rus
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ImportType: Equatable, Hashable {
     
@@ -19559,7 +19544,8 @@ public func FfiConverterTypeImportType_lower(_ value: ImportType) -> RustBuffer 
 
 
 
-public enum ImportWalletError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum ImportWalletError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -19702,8 +19688,7 @@ public func FfiConverterTypeImportWalletError_lower(_ value: ImportWalletError) 
     return FfiConverterTypeImportWalletError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ImportWalletManagerAction: Equatable, Hashable {
     
@@ -19762,8 +19747,7 @@ public func FfiConverterTypeImportWalletManagerAction_lower(_ value: ImportWalle
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ImportWalletManagerReconcileMessage: Equatable, Hashable {
     
@@ -19823,7 +19807,8 @@ public func FfiConverterTypeImportWalletManagerReconcileMessage_lower(_ value: I
 
 
 
-public enum InitError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum InitError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -19896,8 +19881,7 @@ public func FfiConverterTypeInitError_lower(_ value: InitError) -> RustBuffer {
     return FfiConverterTypeInitError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum InsertOrUpdate: Equatable, Hashable {
     
@@ -19970,7 +19954,8 @@ public func FfiConverterTypeInsertOrUpdate_lower(_ value: InsertOrUpdate) -> Rus
 
 
 
-public enum LabelDbError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum LabelDbError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -20064,7 +20049,8 @@ public func FfiConverterTypeLabelDbError_lower(_ value: LabelDbError) -> RustBuf
 }
 
 
-public enum LabelManagerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum LabelManagerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -20237,8 +20223,7 @@ public func FfiConverterTypeLabelManagerError_lower(_ value: LabelManagerError) 
     return FfiConverterTypeLabelManagerError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ListSortDirection: Equatable, Hashable {
     
@@ -20305,7 +20290,8 @@ public func FfiConverterTypeListSortDirection_lower(_ value: ListSortDirection) 
 
 
 
-public enum MnemonicError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum MnemonicError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -20409,7 +20395,8 @@ public func FfiConverterTypeMnemonicError_lower(_ value: MnemonicError) -> RustB
 }
 
 
-public enum MnemonicParseError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum MnemonicParseError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -20494,8 +20481,7 @@ public func FfiConverterTypeMnemonicParseError_lower(_ value: MnemonicParseError
     return FfiConverterTypeMnemonicParseError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum MultiFormat: Equatable {
     
@@ -20648,7 +20634,8 @@ public func FfiConverterTypeMultiFormat_lower(_ value: MultiFormat) -> RustBuffe
 
 
 
-public enum MultiFormatError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum MultiFormatError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -20760,7 +20747,8 @@ public func FfiConverterTypeMultiFormatError_lower(_ value: MultiFormatError) ->
 }
 
 
-public enum MultiQrError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum MultiQrError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -20881,8 +20869,7 @@ public func FfiConverterTypeMultiQrError_lower(_ value: MultiQrError) -> RustBuf
     return FfiConverterTypeMultiQrError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum NewWalletRoute: Equatable, Hashable {
     
@@ -20961,8 +20948,7 @@ public func FfiConverterTypeNewWalletRoute_lower(_ value: NewWalletRoute) -> Rus
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum NodeSelection: Equatable, Hashable {
     
@@ -21043,7 +21029,8 @@ public func FfiConverterTypeNodeSelection_lower(_ value: NodeSelection) -> RustB
 
 
 
-public enum NodeSelectorError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum NodeSelectorError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -21146,8 +21133,7 @@ public func FfiConverterTypeNodeSelectorError_lower(_ value: NodeSelectorError) 
     return FfiConverterTypeNodeSelectorError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum NumberOfBip39Words: Equatable, Hashable {
     
@@ -21213,8 +21199,7 @@ public func FfiConverterTypeNumberOfBip39Words_lower(_ value: NumberOfBip39Words
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum PendingOrConfirmed: Equatable, Hashable {
     
@@ -21286,8 +21271,7 @@ public func FfiConverterTypePendingOrConfirmed_lower(_ value: PendingOrConfirmed
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum PendingWalletManagerAction: Equatable, Hashable {
     
@@ -21350,7 +21334,8 @@ public func FfiConverterTypePendingWalletManagerAction_lower(_ value: PendingWal
 
 
 
-public enum PendingWalletManagerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum PendingWalletManagerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -21443,8 +21428,7 @@ public func FfiConverterTypePendingWalletManagerError_lower(_ value: PendingWall
     return FfiConverterTypePendingWalletManagerError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum PendingWalletManagerReconcileMessage: Equatable, Hashable {
     
@@ -21506,8 +21490,7 @@ public func FfiConverterTypePendingWalletManagerReconcileMessage_lower(_ value: 
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum Route {
     
@@ -21658,8 +21641,7 @@ public func FfiConverterTypeRoute_lower(_ value: Route) -> RustBuffer {
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * Progress information for multi-part QR scans
  */
@@ -21763,8 +21745,7 @@ public func FfiConverterTypeScanProgress_lower(_ value: ScanProgress) -> RustBuf
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * Result of a QR scan - either complete with parsed data or in progress
  */
@@ -21853,8 +21834,7 @@ public func FfiConverterTypeScanResult_lower(_ value: ScanResult) -> RustBuffer 
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ScanState: Equatable, Hashable {
     
@@ -21930,8 +21910,7 @@ public func FfiConverterTypeScanState_lower(_ value: ScanState) -> RustBuffer {
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum ScannerResponse: Equatable, Hashable {
     
@@ -22000,8 +21979,7 @@ public func FfiConverterTypeScannerResponse_lower(_ value: ScannerResponse) -> R
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * What alert to show for validation messages
  */
@@ -22138,8 +22116,7 @@ public func FfiConverterTypeSecurityAlertState_lower(_ value: SecurityAlertState
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * Action the user wants to take on security settings
  */
@@ -22241,8 +22218,7 @@ public func FfiConverterTypeSecuritySettingsAction_lower(_ value: SecuritySettin
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * Result of validating a security settings action
  */
@@ -22333,8 +22309,7 @@ public func FfiConverterTypeSecuritySettingsResult_lower(_ value: SecuritySettin
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * What sheet to show for PIN entry flows
  */
@@ -22487,7 +22462,8 @@ public func FfiConverterTypeSecuritySheetState_lower(_ value: SecuritySheetState
 
 
 
-public enum SeedQrError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum SeedQrError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -22596,8 +22572,7 @@ public func FfiConverterTypeSeedQrError_lower(_ value: SeedQrError) -> RustBuffe
     return FfiConverterTypeSeedQrError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SendFlowAlertState: Equatable, Hashable {
     
@@ -22670,8 +22645,7 @@ public func FfiConverterTypeSendFlowAlertState_lower(_ value: SendFlowAlertState
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SendFlowEnterMode {
     
@@ -22741,7 +22715,8 @@ public func FfiConverterTypeSendFlowEnterMode_lower(_ value: SendFlowEnterMode) 
 
 
 
-public enum SendFlowError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum SendFlowError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -22930,8 +22905,7 @@ public func FfiConverterTypeSendFlowError_lower(_ value: SendFlowError) -> RustB
     return FfiConverterTypeSendFlowError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SendFlowErrorAlert: Equatable, Hashable {
     
@@ -23004,7 +22978,8 @@ public func FfiConverterTypeSendFlowErrorAlert_lower(_ value: SendFlowErrorAlert
 
 
 
-public enum SendFlowFiatOnChangeError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum SendFlowFiatOnChangeError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -23099,8 +23074,7 @@ public func FfiConverterTypeSendFlowFiatOnChangeError_lower(_ value: SendFlowFia
     return FfiConverterTypeSendFlowFiatOnChangeError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SendFlowManagerAction {
     
@@ -23362,8 +23336,7 @@ public func FfiConverterTypeSendFlowManagerAction_lower(_ value: SendFlowManager
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SendFlowManagerReconcileMessage {
     
@@ -23546,8 +23519,7 @@ public func FfiConverterTypeSendFlowManagerReconcileMessage_lower(_ value: SendF
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SendRoute {
     
@@ -23644,7 +23616,8 @@ public func FfiConverterTypeSendRoute_lower(_ value: SendRoute) -> RustBuffer {
 
 
 
-public enum SerdeError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum SerdeError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -23737,8 +23710,7 @@ public func FfiConverterTypeSerdeError_lower(_ value: SerdeError) -> RustBuffer 
     return FfiConverterTypeSerdeError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SetAmountFocusField: Equatable, Hashable {
     
@@ -23804,8 +23776,7 @@ public func FfiConverterTypeSetAmountFocusField_lower(_ value: SetAmountFocusFie
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SettingsRoute: Equatable, Hashable {
     
@@ -23917,8 +23888,7 @@ public func FfiConverterTypeSettingsRoute_lower(_ value: SettingsRoute) -> RustB
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum SetupCmdResponse {
     
@@ -24011,7 +23981,8 @@ public func FfiConverterTypeSetupCmdResponse_lower(_ value: SetupCmdResponse) ->
 
 
 
-public enum SignedImportError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum SignedImportError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -24108,8 +24079,7 @@ public func FfiConverterTypeSignedImportError_lower(_ value: SignedImportError) 
     return FfiConverterTypeSignedImportError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * Result of parsing a signed transaction import
  *
@@ -24248,8 +24218,7 @@ public func FfiConverterTypeSignedTransactionOrPsbt_lower(_ value: SignedTransac
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum StoreType: Equatable, Hashable {
     
@@ -24315,8 +24284,7 @@ public func FfiConverterTypeStoreType_lower(_ value: StoreType) -> RustBuffer {
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * A string or data, could be a string or data (bytes)
  */
@@ -24399,8 +24367,7 @@ public func FfiConverterTypeStringOrData_lower(_ value: StringOrData) -> RustBuf
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum TapSignerCmd {
     
@@ -24504,8 +24471,7 @@ public func FfiConverterTypeTapSignerCmd_lower(_ value: TapSignerCmd) -> RustBuf
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * When the user goes through entering the PIN and setting a new one, they are either setting up a new tapsigner
  * or changing the PIN on an existing one
@@ -24576,7 +24542,8 @@ public func FfiConverterTypeTapSignerPinAction_lower(_ value: TapSignerPinAction
 
 
 
-public enum TapSignerReaderError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum TapSignerReaderError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -24757,8 +24724,7 @@ public func FfiConverterTypeTapSignerReaderError_lower(_ value: TapSignerReaderE
     return FfiConverterTypeTapSignerReaderError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum TapSignerResponse {
     
@@ -24857,8 +24823,7 @@ public func FfiConverterTypeTapSignerResponse_lower(_ value: TapSignerResponse) 
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum TapSignerRoute {
     
@@ -25024,8 +24989,7 @@ public func FfiConverterTypeTapSignerRoute_lower(_ value: TapSignerRoute) -> Rus
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum Transaction {
     
@@ -25098,7 +25062,8 @@ public func FfiConverterTypeTransaction_lower(_ value: Transaction) -> RustBuffe
 
 
 
-public enum TransactionDetailError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum TransactionDetailError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -25227,8 +25192,7 @@ public func FfiConverterTypeTransactionDetailError_lower(_ value: TransactionDet
     return FfiConverterTypeTransactionDetailError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum TransactionState: Equatable, Hashable {
     
@@ -25295,7 +25259,8 @@ public func FfiConverterTypeTransactionState_lower(_ value: TransactionState) ->
 
 
 
-public enum TransportError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum TransportError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -25439,7 +25404,8 @@ public func FfiConverterTypeTransportError_lower(_ value: TransportError) -> Rus
 }
 
 
-public enum TrickPinError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum TrickPinError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -25539,7 +25505,8 @@ public func FfiConverterTypeTrickPinError_lower(_ value: TrickPinError) -> RustB
 }
 
 
-public enum UnsignedTransactionsTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum UnsignedTransactionsTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -25638,8 +25605,7 @@ public func FfiConverterTypeUnsignedTransactionsTableError_lower(_ value: Unsign
     return FfiConverterTypeUnsignedTransactionsTableError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * Supported UR types for Bitcoin operations
  */
@@ -25767,8 +25733,7 @@ public func FfiConverterTypeUrType_lower(_ value: UrType) -> RustBuffer {
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletAddressType: Equatable, Hashable, CustomStringConvertible {
     
@@ -25859,8 +25824,7 @@ public func FfiConverterTypeWalletAddressType_lower(_ value: WalletAddressType) 
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletColor: Equatable, Hashable {
     
@@ -26051,7 +26015,8 @@ public func FfiConverterTypeWalletColor_lower(_ value: WalletColor) -> RustBuffe
 
 
 
-public enum WalletCreationError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum WalletCreationError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -26185,7 +26150,8 @@ public func FfiConverterTypeWalletCreationError_lower(_ value: WalletCreationErr
 }
 
 
-public enum WalletDataError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum WalletDataError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -26302,8 +26268,7 @@ public func FfiConverterTypeWalletDataError_lower(_ value: WalletDataError) -> R
     return FfiConverterTypeWalletDataError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletDataKey: Equatable, Hashable {
     
@@ -26366,7 +26331,8 @@ public func FfiConverterTypeWalletDataKey_lower(_ value: WalletDataKey) -> RustB
 
 
 
-public enum WalletError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum WalletError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -26551,8 +26517,7 @@ public func FfiConverterTypeWalletError_lower(_ value: WalletError) -> RustBuffe
     return FfiConverterTypeWalletError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletErrorAlert: Equatable, Hashable {
     
@@ -26621,8 +26586,7 @@ public func FfiConverterTypeWalletErrorAlert_lower(_ value: WalletErrorAlert) ->
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletLoadState {
     
@@ -26710,8 +26674,7 @@ public func FfiConverterTypeWalletLoadState_lower(_ value: WalletLoadState) -> R
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletManagerAction {
     
@@ -26873,7 +26836,8 @@ public func FfiConverterTypeWalletManagerAction_lower(_ value: WalletManagerActi
 
 
 
-public enum WalletManagerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum WalletManagerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -27218,8 +27182,7 @@ public func FfiConverterTypeWalletManagerError_lower(_ value: WalletManagerError
     return FfiConverterTypeWalletManagerError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletManagerReconcileMessage {
     
@@ -27405,8 +27368,7 @@ public func FfiConverterTypeWalletManagerReconcileMessage_lower(_ value: WalletM
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletMode: Equatable, Hashable {
     
@@ -27473,7 +27435,8 @@ public func FfiConverterTypeWalletMode_lower(_ value: WalletMode) -> RustBuffer 
 
 
 
-public enum WalletScannerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum WalletScannerError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -27572,8 +27535,7 @@ public func FfiConverterTypeWalletScannerError_lower(_ value: WalletScannerError
     return FfiConverterTypeWalletScannerError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletSecretType: Equatable, Hashable {
     
@@ -27661,8 +27623,7 @@ public func FfiConverterTypeWalletSecretType_lower(_ value: WalletSecretType) ->
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletSettingsRoute: Equatable, Hashable {
     
@@ -27729,7 +27690,8 @@ public func FfiConverterTypeWalletSettingsRoute_lower(_ value: WalletSettingsRou
 
 
 
-public enum WalletTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum WalletTableError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -27828,8 +27790,7 @@ public func FfiConverterTypeWalletTableError_lower(_ value: WalletTableError) ->
     return FfiConverterTypeWalletTableError.lower(value)
 }
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 
 public enum WalletType: Equatable, Hashable, CustomStringConvertible {
     
@@ -27927,8 +27888,7 @@ public func FfiConverterTypeWalletType_lower(_ value: WalletType) -> RustBuffer 
 }
 
 
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 /**
  * The current state of the word verification check
  */
@@ -28046,7 +28006,8 @@ public func FfiConverterTypeWordCheckState_lower(_ value: WordCheckState) -> Rus
 
 
 
-public enum XpubError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+public 
+enum XpubError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
     
@@ -31014,9 +30975,8 @@ public func isValidChainCode(chainCode: String) -> Bool  {
 })
 }
 /**
- * Factory function to create a TapSignerReader instance
- * This is a workaround for UniFFI not generating async constructors for Kotlin
- * While iOS can use the async constructor directly, Android needs this factory function
+ * Create a TapSignerReader instance for FFI callers
+ * UniFFI's Kotlin bindings do not support async primary constructors
  */
 public func createTapSignerReader(transport: TapcardTransportProtocol, cmd: TapSignerCmd?)async throws  -> TapSignerReader  {
     return
@@ -31219,7 +31179,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_func_is_valid_chain_code() != 38380) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_func_create_tap_signer_reader() != 39823) {
+    if (uniffi_cove_checksum_func_create_tap_signer_reader() != 37635) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_func_tapsignerresponsebackupresponse() != 56452) {
@@ -31879,6 +31839,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustwalletmanager_get_unsigned_transactions() != 35895) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cove_checksum_method_rustwalletmanager_initial_load_state() != 32246) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cove_checksum_method_rustwalletmanager_label_manager() != 23571) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -32369,9 +32332,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_constructor_setupcmd_try_new() != 28305) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_cove_checksum_constructor_tapsignerreader_new() != 47410) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_constructor_bitcointransaction_new() != 54413) {

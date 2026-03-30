@@ -84,7 +84,6 @@ impl App {
     fn new() -> Self {
         set_env();
 
-        // one time init
         crate::logging::init();
 
         // storage must be bootstrapped before any database access

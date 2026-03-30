@@ -158,6 +158,7 @@ pub struct RustWalletManager {
     pub reconcile_receiver: Arc<Receiver<SingleOrMany>>,
 
     label_manager: Arc<LabelManager>,
+    initial_load_state: WalletLoadState,
 
     #[allow(dead_code)]
     scanner: Option<Addr<WalletScanner>>,
@@ -286,7 +287,12 @@ impl RustWalletManager {
         let cached_balance: Balance = wallet.balance();
         let cached_transactions: Vec<Transaction> = wallet.transactions();
         deferred.queue(Message::WalletBalanceChanged(cached_balance.into()));
-        deferred.queue(Message::AvailableTransactions(cached_transactions));
+
+        let initial_load_state = if cached_transactions.is_empty() {
+            WalletLoadState::Loading
+        } else {
+            WalletLoadState::Scanning(cached_transactions)
+        };
 
         let wallet_actor = WalletActor::new(wallet, sender.clone())
             .map_err(|e| Error::DatabaseCorruption { id: id.clone(), error: e.to_string() })?;
@@ -304,8 +310,14 @@ impl RustWalletManager {
             reconciler,
             reconcile_receiver: Arc::new(receiver),
             label_manager,
+            initial_load_state,
             scanner,
         })
+    }
+
+    #[uniffi::method]
+    pub fn initial_load_state(&self) -> WalletLoadState {
+        self.initial_load_state.clone()
     }
 
     #[uniffi::method]
@@ -369,6 +381,7 @@ impl RustWalletManager {
             reconciler: MessageSender::new(sender),
             reconcile_receiver: Arc::new(receiver),
             label_manager,
+            initial_load_state: WalletLoadState::Loading,
             scanner,
         })
     }
@@ -398,6 +411,7 @@ impl RustWalletManager {
             reconciler: MessageSender::new(sender),
             reconcile_receiver: Arc::new(receiver),
             label_manager,
+            initial_load_state: WalletLoadState::Loading,
             scanner: None,
         })
     }
@@ -1366,6 +1380,7 @@ impl RustWalletManager {
             reconciler: MessageSender::new(sender),
             reconcile_receiver: Arc::new(receiver),
             label_manager,
+            initial_load_state: WalletLoadState::Loading,
             scanner: None,
         }
     }

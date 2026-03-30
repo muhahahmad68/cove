@@ -112,7 +112,6 @@ struct NewWalletSelectScreen: View {
             }
         }
         .padding()
-        .navigationBarTitleDisplayMode(.inline)
         .fileImporter(
             isPresented: $isImporting,
             allowedContentTypes: [.plainText, .json]
@@ -147,14 +146,10 @@ struct NewWalletSelectScreen: View {
                 .brightness(0.05)
         )
         .background(Color.midnightBlue)
+        .navigationTitle("Add New Wallet")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Add New Wallet")
-                    .font(.callout)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
-            }
-
             ToolbarItemGroup(placement: .topBarTrailing) {
                 HStack(spacing: 6) {
                     Button(action: app.scanQr) {

@@ -220,33 +220,35 @@ struct SelectedWalletScreen: View {
         return .white
     }
 
-    @ToolbarContentBuilder
-    var MainToolBar: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            HStack(spacing: 10) {
-                if case .cold = metadata.walletType {
-                    BitcoinShieldIcon(width: 13, color: toolbarTextColor)
-                }
-
-                Text(metadata.name)
-                    .foregroundStyle(toolbarTextColor)
-                    .font(.callout)
-                    .fontWeight(.semibold)
+    var titleContent: some View {
+        HStack(spacing: 10) {
+            if case .cold = metadata.walletType {
+                BitcoinShieldIcon(width: 13, color: toolbarTextColor)
             }
-            .padding(.vertical, 20)
-            .padding(.horizontal, 28)
-            .contentShape(Rectangle())
-            .contentShape(
-                .contextMenuPreview,
-                RoundedRectangle(cornerRadius: 8)
-            )
-            .contextMenu {
-                Button("Change Name") {
-                    app.pushRoute(Route.settings(.wallet(id: metadata.id, route: .changeName)))
-                }
+
+            Text(metadata.name)
+                .foregroundStyle(toolbarTextColor)
+                .font(.callout)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.vertical, 20)
+        .padding(.horizontal, 28)
+        .contentShape(Rectangle())
+        .contentShape(
+            .contextMenuPreview,
+            RoundedRectangle(cornerRadius: 8)
+        )
+        .contextMenu {
+            Button("Change Name") {
+                app.pushRoute(Route.settings(.wallet(id: metadata.id, route: .changeName)))
             }
         }
+    }
 
+    @ToolbarContentBuilder
+    var MainToolBar: some ToolbarContent {
         ToolbarItemGroup(placement: .navigationBarTrailing) {
             HStack(spacing: 5) {
                 Button(action: {
@@ -310,6 +312,20 @@ struct SelectedWalletScreen: View {
                 showReceiveSheet: showReceiveSheet
             )
             .clipped()
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.frame(in: .global).maxY
+            } action: { _, headerBottom in
+                let navBarThreshold = safeAreaInsets.top + 50
+                let hysteresis: CGFloat = 10
+
+                if !shouldShowNavBar, headerBottom < navBarThreshold - hysteresis {
+                    shouldShowNavBar = true
+                    app.isPastHeader = true
+                } else if shouldShowNavBar, headerBottom > navBarThreshold + hysteresis {
+                    shouldShowNavBar = false
+                    app.isPastHeader = false
+                }
+            }
 
             VerifyReminder(
                 walletId: manager.walletMetadata.id, isVerified: manager.walletMetadata.verified
@@ -320,6 +336,7 @@ struct SelectedWalletScreen: View {
         }
         .background(Color.coveBg)
         .toolbar { MainToolBar }
+        .navigationTitleView { titleContent }
         .adaptiveToolbarStyle(showNavBar: shouldShowNavBar)
         .sheet(item: $sheetState, content: SheetContent)
         .fileImporter(
@@ -474,12 +491,6 @@ struct SelectedWalletScreen: View {
             }
             .scrollIndicators(.hidden)
             .modifier(SoftScrollEdgeModifier())
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y > (geometry.contentInsets.top + safeAreaInsets.top - 5)
-            } action: { _, pastTop in
-                shouldShowNavBar = pastTop
-                app.isPastHeader = pastTop
-            }
         }
         .modifier(OuterBackgroundModifier(iOS26OrLater: iOS26OrLater))
         .onChange(of: manager.walletMetadata.discoveryState) { _, newValue in
@@ -496,6 +507,10 @@ struct SelectedWalletScreen: View {
             }
         }
         .onAppear(perform: manager.validateMetadata)
+        .onAppear {
+            shouldShowNavBar = false
+            app.isPastHeader = false
+        }
         .onDisappear {
             // reset scroll state when leaving this screen
             app.isPastHeader = false

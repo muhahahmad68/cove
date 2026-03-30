@@ -21,9 +21,8 @@ where
 pub fn generate_random_chain_code() -> [u8; 32] {
     use rand::RngExt as _;
 
-    let rng = &mut rand::rng();
     let mut chain_code = [0u8; 32];
-    rng.fill(&mut chain_code);
+    rand::rng().fill(&mut chain_code);
 
     chain_code
 }

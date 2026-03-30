@@ -156,7 +156,7 @@ struct MoreInfoPopover: View {
                 Label("Wallet Settings", systemImage: "gear")
             }
         }
-        .tint(.primary)
+        .tint(Color(uiColor: .label))
         .onAppear {
             if case let .tapSigner(t) = metadata.hardwareMetadata {
                 loadTapSignerBackup(t)

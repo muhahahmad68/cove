@@ -199,6 +199,11 @@ impl RustCloudBackupManager {
         PendingUploadVerifier(self).run_once()
     }
 
+    #[cfg(test)]
+    pub(super) fn verify_pending_uploads_once_for_test(&self) -> bool {
+        self.verify_pending_uploads_once()
+    }
+
     fn wake_pending_upload_verifier(&self) {
         if self.pending_upload_verifier_running.load(Ordering::SeqCst) {
             self.pending_upload_verifier_wakeup.notify_one();

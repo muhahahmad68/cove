@@ -786,7 +786,9 @@ mod tests {
     use super::*;
     use crate::database::Database;
     use crate::database::cloud_backup::{PersistedCloudBackupState, PersistedCloudBackupStatus};
-    use crate::manager::cloud_backup_manager::{DeepVerificationResult, VerificationFailureKind};
+    use crate::manager::cloud_backup_manager::{
+        DeepVerificationResult, VerificationFailureKind, VerificationState,
+    };
     use crate::mnemonic::MnemonicExt as _;
     use crate::network::Network;
     use crate::wallet::metadata::{WalletMode, WalletType};
@@ -854,6 +856,7 @@ mod tests {
     struct MockCloudState {
         wallet_files: HashMap<String, Vec<String>>,
         master_key_backups: HashMap<String, Vec<u8>>,
+        wallet_backups: HashMap<(String, String), Vec<u8>>,
         upload_master_key_error: Option<CloudStorageError>,
         upload_wallet_backup_error: Option<CloudStorageError>,
         reflect_uploaded_wallets_in_listing: bool,
@@ -914,13 +917,15 @@ mod tests {
             &self,
             namespace: String,
             record_id: String,
-            _data: Vec<u8>,
+            data: Vec<u8>,
         ) -> Result<(), CloudStorageError> {
             if let Some(error) = self.state.lock().upload_wallet_backup_error.clone() {
                 return Err(error);
             }
 
-            self.state.lock().uploaded_wallet_backups.push((namespace, record_id));
+            let mut state = self.state.lock();
+            state.wallet_backups.insert((namespace.clone(), record_id.clone()), data);
+            state.uploaded_wallet_backups.push((namespace, record_id));
             Ok(())
         }
 
@@ -941,7 +946,12 @@ mod tests {
             namespace: String,
             record_id: String,
         ) -> Result<Vec<u8>, CloudStorageError> {
-            Err(CloudStorageError::NotFound(format!("{namespace}/{record_id}")))
+            self.state
+                .lock()
+                .wallet_backups
+                .get(&(namespace.clone(), record_id.clone()))
+                .cloned()
+                .ok_or(CloudStorageError::NotFound(format!("{namespace}/{record_id}")))
         }
 
         fn delete_wallet_backup(
@@ -1406,33 +1416,66 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn deep_verify_fails_when_relist_still_misses_uploaded_wallet() {
+    async fn deep_verify_awaits_upload_confirmation_when_relist_still_misses_uploaded_wallet() {
         let _guard = test_lock().lock().unwrap();
         cove_tokio::init();
         let globals = test_globals();
         let manager = RustCloudBackupManager::init();
         let metadata = prepare_deep_verify_with_unsynced_wallet(&manager, globals);
+        let record_id = cove_cspp::backup_data::wallet_record_id(metadata.id.as_ref());
 
         let result = manager.deep_verify_cloud_backup(true);
 
         match result {
-            DeepVerificationResult::Failed(failure) => {
-                assert_eq!(failure.kind, VerificationFailureKind::Retry);
-                assert_eq!(
-                    failure.message,
-                    "1 local wallet backup(s) are still missing in iCloud after auto-sync"
-                );
-                let detail = failure.detail.expect("expected detail on retry failure");
+            DeepVerificationResult::AwaitingUploadConfirmation(report) => {
+                let detail = report.detail.expect("expected verification detail");
                 assert_eq!(detail.not_backed_up.len(), 1);
-                assert_eq!(
-                    detail.not_backed_up[0].record_id,
-                    cove_cspp::backup_data::wallet_record_id(metadata.id.as_ref())
-                );
+                assert_eq!(detail.not_backed_up[0].record_id, record_id);
             }
-            other => panic!("expected retry failure, got {other:?}"),
+            other => panic!("expected awaiting upload confirmation, got {other:?}"),
         }
 
         assert_eq!(globals.cloud.uploaded_wallet_backup_count(), 1);
+        assert!(manager.pending_verification_completion().is_some());
+        assert!(manager.has_pending_cloud_upload_verification());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn pending_upload_verification_finalizes_awaiting_deep_verify() {
+        let _guard = test_lock().lock().unwrap();
+        cove_tokio::init();
+        let globals = test_globals();
+        let manager = RustCloudBackupManager::init();
+        let metadata = prepare_deep_verify_with_unsynced_wallet(&manager, globals);
+        let record_id = cove_cspp::backup_data::wallet_record_id(metadata.id.as_ref());
+
+        let result = manager.deep_verify_cloud_backup(true);
+
+        assert!(matches!(result, DeepVerificationResult::AwaitingUploadConfirmation(_)));
+        assert!(manager.pending_verification_completion().is_some());
+        assert!(manager.has_pending_cloud_upload_verification());
+
+        let has_more_pending = manager.verify_pending_uploads_once_for_test();
+
+        assert!(!has_more_pending);
+        assert!(manager.pending_verification_completion().is_none());
+        assert!(!manager.has_pending_cloud_upload_verification());
+
+        match manager.state().verification {
+            VerificationState::Verified(report) => {
+                assert_eq!(report.wallets_verified, 1);
+                assert_eq!(report.wallets_failed, 0);
+                assert_eq!(report.wallets_unsupported, 0);
+
+                let detail = report.detail.expect("expected verification detail");
+                assert_eq!(detail.backed_up.len(), 1);
+                assert!(detail.not_backed_up.is_empty());
+                assert_eq!(detail.backed_up[0].record_id, record_id);
+            }
+            other => {
+                panic!("expected verified result after pending upload verification, got {other:?}")
+            }
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]

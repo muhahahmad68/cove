@@ -266,9 +266,7 @@ extension CoveApp {
         Task {
             CloudBackupManager.shared.rust.resumePendingCloudUploadVerification()
 
-            let isICloudAvailable = await MainActor.run {
-                FileManager.default.ubiquityIdentityToken != nil
-            }
+            let isICloudAvailable = await MainActor.run { FileManager.default.ubiquityIdentityToken != nil }
             guard isICloudAvailable else { return }
 
             let warning = await Task.detached {

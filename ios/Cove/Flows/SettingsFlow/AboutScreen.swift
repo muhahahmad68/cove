@@ -5,10 +5,12 @@ private enum AlertState: Equatable {
     case confirmBetaDisable
     case betaEnabled
     case betaError(String)
-    case confirmWipeCloud
-    case wipeCloudResult(String)
-    case confirmResetLocalState
-    case resetLocalStateResult(String)
+    #if DEBUG
+        case confirmWipeCloud
+        case wipeCloudResult(String)
+        case confirmResetLocalState
+        case resetLocalStateResult(String)
+    #endif
 }
 
 struct AboutScreen: View {
@@ -181,67 +183,71 @@ struct AboutScreen: View {
                 actions: { Button("OK") { alertState = .none } }
             ).eraseToAny()
 
-        case .confirmWipeCloud:
-            AlertBuilder(
-                title: "Wipe Cloud Backup?",
-                message: "Deletes all iCloud backup files and resets local backup state",
-                actions: {
-                    Button("Wipe", role: .destructive) {
-                        Task.detached {
-                            let result = Self.debugWipeCloudBackup()
-                            await MainActor.run {
-                                alertState = .init(.wipeCloudResult(result))
+        #if DEBUG
+            case .confirmWipeCloud:
+                AlertBuilder(
+                    title: "Wipe Cloud Backup?",
+                    message: "Deletes all iCloud backup files and resets local backup state",
+                    actions: {
+                        Button("Wipe", role: .destructive) {
+                            Task.detached {
+                                let result = Self.debugWipeCloudBackup()
+                                await MainActor.run {
+                                    alertState = .init(.wipeCloudResult(result))
+                                }
                             }
                         }
+                        Button("Cancel", role: .cancel) { alertState = .none }
                     }
-                    Button("Cancel", role: .cancel) { alertState = .none }
-                }
-            ).eraseToAny()
+                ).eraseToAny()
 
-        case let .wipeCloudResult(message):
-            AlertBuilder(
-                title: "Cloud Backup Wiped",
-                message: message,
-                actions: { Button("OK") { alertState = .none } }
-            ).eraseToAny()
+            case let .wipeCloudResult(message):
+                AlertBuilder(
+                    title: "Cloud Backup Wiped",
+                    message: message,
+                    actions: { Button("OK") { alertState = .none } }
+                ).eraseToAny()
 
-        case .confirmResetLocalState:
-            AlertBuilder(
-                title: "Reset Local Backup State?",
-                message: "Clears local keychain and DB backup state but keeps iCloud files intact. Use this to test the recovery flow.",
-                actions: {
-                    Button("Reset", role: .destructive) {
-                        RustCloudBackupManager().debugResetCloudBackupState()
-                        alertState = .init(.resetLocalStateResult("Local backup state reset. iCloud files are untouched."))
+            case .confirmResetLocalState:
+                AlertBuilder(
+                    title: "Reset Local Backup State?",
+                    message: "Clears local keychain and DB backup state but keeps iCloud files intact. Use this to test the recovery flow.",
+                    actions: {
+                        Button("Reset", role: .destructive) {
+                            RustCloudBackupManager().debugResetCloudBackupState()
+                            alertState = .init(.resetLocalStateResult("Local backup state reset. iCloud files are untouched."))
+                        }
+                        Button("Cancel", role: .cancel) { alertState = .none }
                     }
-                    Button("Cancel", role: .cancel) { alertState = .none }
-                }
-            ).eraseToAny()
+                ).eraseToAny()
 
-        case let .resetLocalStateResult(message):
-            AlertBuilder(
-                title: "Local State Reset",
-                message: message,
-                actions: { Button("OK") { alertState = .none } }
-            ).eraseToAny()
+            case let .resetLocalStateResult(message):
+                AlertBuilder(
+                    title: "Local State Reset",
+                    message: message,
+                    actions: { Button("OK") { alertState = .none } }
+                ).eraseToAny()
+        #endif
         }
     }
 
-    private nonisolated static func debugWipeCloudBackup() -> String {
-        let helper = ICloudDriveHelper.shared
+    #if DEBUG
+        private nonisolated static func debugWipeCloudBackup() -> String {
+            let helper = ICloudDriveHelper.shared
 
-        do {
-            let dataDir = try helper.dataDirectoryURL()
-            if FileManager.default.fileExists(atPath: dataDir.path) {
-                try FileManager.default.removeItem(at: dataDir)
+            do {
+                let dataDir = try helper.dataDirectoryURL()
+                if FileManager.default.fileExists(atPath: dataDir.path) {
+                    try FileManager.default.removeItem(at: dataDir)
+                }
+            } catch {
+                return "iCloud wipe failed: \(error.localizedDescription)"
             }
-        } catch {
-            return "iCloud wipe failed: \(error.localizedDescription)"
-        }
 
-        RustCloudBackupManager().debugResetCloudBackupState()
-        return "All cloud backup data deleted and local state reset"
-    }
+            RustCloudBackupManager().debugResetCloudBackupState()
+            return "All cloud backup data deleted and local state reset"
+        }
+    #endif
 }
 
 #Preview {

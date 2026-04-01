@@ -8,13 +8,6 @@ use tracing::{info, warn};
 
 use crate::bdk_store::sqlite_auxiliary_path;
 
-pub(super) fn clean_auxiliary_files(db_path: &Path) {
-    for suffix in ["wal", "shm"] {
-        let aux_path = sqlite_auxiliary_path(db_path, suffix);
-        super::super::log_remove_file(&aux_path);
-    }
-}
-
 /// Checkpoint WAL data into the main DB file before removing auxiliary files
 ///
 /// Prevents losing uncheckpointed writes when recovery artifacts trigger cleanup
@@ -163,4 +156,11 @@ pub(super) fn recover_at_path(db_path: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub(super) fn clean_auxiliary_files(db_path: &Path) {
+    for suffix in ["wal", "shm"] {
+        let aux_path = sqlite_auxiliary_path(db_path, suffix);
+        super::super::log_remove_file(&aux_path);
+    }
 }

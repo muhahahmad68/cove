@@ -10,8 +10,8 @@ final class PasskeyProviderImpl: PasskeyProvider, @unchecked Sendable {
         return "len=\(credentialId.count) prefix=\(prefix)"
     }
 
+    /// PRF is guaranteed on iOS 18.4+ (our minimum deployment target)
     func isPrfSupported() -> Bool {
-        // PRF is guaranteed on iOS 18.4+ (our minimum deployment target)
         true
     }
 
@@ -274,7 +274,8 @@ private class PasskeyDelegate: NSObject, ASAuthorizationControllerDelegate,
         controller _: ASAuthorizationController,
         didCompleteWithError error: Error
     ) {
-        if let authError = error as? ASAuthorizationError {
+        switch error as? ASAuthorizationError {
+        case let authError?:
             switch authError.code {
             case .canceled:
                 result = .failure(PasskeyError.UserCancelled)
@@ -283,7 +284,7 @@ private class PasskeyDelegate: NSObject, ASAuthorizationControllerDelegate,
                     PasskeyError.AuthenticationFailed(error.localizedDescription)
                 )
             }
-        } else {
+        case nil:
             result = .failure(
                 PasskeyError.AuthenticationFailed(error.localizedDescription)
             )

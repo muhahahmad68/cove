@@ -390,7 +390,7 @@ struct VerifyWordsScreen: View {
                         .fontWeight(.medium)
                 }
             }
-            .safeAreaPadding(.bottom, isMiniDevice ? 30 : 30)
+            .safeAreaPadding(.bottom, 30)
         }
         .padding()
         .alert(item: $activeAlert) { alertType in

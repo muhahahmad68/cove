@@ -269,128 +269,17 @@ struct MainSettingsScreen: View {
                         sheetState = .init(.cloudBackupOnboarding)
                     }
                 case .enabling:
-                    HStack {
-                        SettingsIcon(symbol: "icloud.and.arrow.up")
-                        Text("Setting up cloud backup...")
-                            .font(.subheadline)
-                            .padding(8)
-                        Spacer()
-                        ProgressView()
-                    }
+                    cloudBackupEnablingRow
                 case .enabled:
-                    HStack {
-                        if manager.isUnverified {
-                            Image(systemName: "exclamationmark.icloud")
-                                .foregroundStyle(.orange)
-                            Text("Cloud Backup Unverified")
-                        } else if manager.hasPendingUploadVerification {
-                            Image(systemName: "arrow.clockwise.icloud")
-                                .foregroundStyle(.blue)
-                            Text("Cloud Backup Verifying")
-                        } else {
-                            Image(
-                                systemName: manager.isVerificationStale
-                                    ? "exclamationmark.icloud" : "checkmark.icloud"
-                            )
-                            .foregroundStyle(manager.isVerificationStale ? .orange : .green)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Cloud Backup Enabled")
-
-                                if manager.isVerificationStale {
-                                    Text("Verification recommended")
-                                        .font(.caption2)
-                                        .foregroundStyle(.orange)
-                                }
-                            }
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(Color(UIColor.tertiaryLabel))
-                            .font(.footnote)
-                            .fontWeight(.semibold)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        app.pushRoute(Route.settings(.cloudBackup))
-                    }
+                    cloudBackupEnabledRow(manager: manager)
                 case .passkeyMissing:
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.icloud.fill")
-                            .foregroundStyle(.red)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Cloud Backup Passkey Missing")
-                                .foregroundStyle(.red)
-                                .fontWeight(.semibold)
-                                .lineLimit(1)
-
-                            Text("Backups can't be restored until you add a new passkey")
-                                .font(.caption2)
-                                .foregroundStyle(.red.opacity(0.5))
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(Color(UIColor.tertiaryLabel))
-                            .font(.footnote)
-                            .fontWeight(.semibold)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        app.pushRoute(Route.settings(.cloudBackup))
-                    }
+                    cloudBackupPasskeyMissingRow
                 case .unsupportedPasskeyProvider:
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.shield.fill")
-                            .foregroundStyle(.red)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Supported Password Manager Required")
-                                .foregroundStyle(.red)
-                                .fontWeight(.semibold)
-                                .lineLimit(1)
-
-                            Text("Use Apple Passwords, 1Password, or Bitwarden")
-                                .font(.caption2)
-                                .foregroundStyle(.red.opacity(0.5))
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(Color(UIColor.tertiaryLabel))
-                            .font(.footnote)
-                            .fontWeight(.semibold)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        app.pushRoute(Route.settings(.cloudBackup))
-                    }
+                    cloudBackupUnsupportedProviderRow
                 case .restoring:
-                    HStack {
-                        ProgressView()
-                            .padding(.trailing, 8)
-                        Text("Restoring from cloud backup...")
-                    }
+                    cloudBackupRestoringRow
                 case let .error(message):
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Image(systemName: "exclamationmark.icloud")
-                                .foregroundStyle(.red)
-                            Text("Cloud Backup Error")
-                        }
-                        Text(message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    SettingsRow(title: "Retry", symbol: "arrow.clockwise") {
-                        manager.dispatch(action: .enableCloudBackup)
-                    }
+                    cloudBackupErrorContent(message: message, manager: manager)
                 }
             }
             .confirmationDialog(
@@ -429,6 +318,134 @@ struct MainSettingsScreen: View {
                 Text("Would you like to use an existing passkey or create a new one?")
             }
         }
+    }
+
+    private var cloudBackupEnablingRow: some View {
+        HStack {
+            SettingsIcon(symbol: "icloud.and.arrow.up")
+            Text("Setting up cloud backup...")
+                .font(.subheadline)
+                .padding(8)
+            Spacer()
+            ProgressView()
+        }
+    }
+
+    private func cloudBackupEnabledRow(manager: CloudBackupManager) -> some View {
+        HStack {
+            cloudBackupEnabledStatus(manager: manager)
+            Spacer()
+            settingsChevron
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            app.pushRoute(Route.settings(.cloudBackup))
+        }
+    }
+
+    @ViewBuilder
+    private func cloudBackupEnabledStatus(manager: CloudBackupManager) -> some View {
+        if manager.isUnverified {
+            Image(systemName: "exclamationmark.icloud")
+                .foregroundStyle(.orange)
+            Text("Cloud Backup Unverified")
+        } else if manager.hasPendingUploadVerification {
+            Image(systemName: "arrow.clockwise.icloud")
+                .foregroundStyle(.blue)
+            Text("Cloud Backup Verifying")
+        } else {
+            Image(
+                systemName: manager.isVerificationStale
+                    ? "exclamationmark.icloud" : "checkmark.icloud"
+            )
+            .foregroundStyle(manager.isVerificationStale ? .orange : .green)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Cloud Backup Enabled")
+
+                if manager.isVerificationStale {
+                    Text("Verification recommended")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
+    private var cloudBackupPasskeyMissingRow: some View {
+        cloudBackupActionRow(
+            icon: "exclamationmark.icloud.fill",
+            title: "Cloud Backup Passkey Missing",
+            message: "Backups can't be restored until you add a new passkey"
+        )
+    }
+
+    private var cloudBackupUnsupportedProviderRow: some View {
+        cloudBackupActionRow(
+            icon: "exclamationmark.shield.fill",
+            title: "Supported Password Manager Required",
+            message: "Use Apple Passwords, 1Password, or Bitwarden"
+        )
+    }
+
+    private func cloudBackupActionRow(icon: String, title: String, message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(.red)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .foregroundStyle(.red)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+
+                Text(message)
+                    .font(.caption2)
+                    .foregroundStyle(.red.opacity(0.5))
+                    .lineLimit(1)
+            }
+
+            Spacer()
+            settingsChevron
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            app.pushRoute(Route.settings(.cloudBackup))
+        }
+    }
+
+    private var cloudBackupRestoringRow: some View {
+        HStack {
+            ProgressView()
+                .padding(.trailing, 8)
+            Text("Restoring from cloud backup...")
+        }
+    }
+
+    private func cloudBackupErrorContent(message: String, manager: CloudBackupManager) -> some View {
+        Group {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Image(systemName: "exclamationmark.icloud")
+                        .foregroundStyle(.red)
+                    Text("Cloud Backup Error")
+                }
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SettingsRow(title: "Retry", symbol: "arrow.clockwise") {
+                manager.dispatch(action: .enableCloudBackup)
+            }
+        }
+    }
+
+    private var settingsChevron: some View {
+        Image(systemName: "chevron.right")
+            .foregroundColor(Color(UIColor.tertiaryLabel))
+            .font(.footnote)
+            .fontWeight(.semibold)
     }
 
     var betaToggle: Binding<Bool> {

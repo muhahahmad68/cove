@@ -26,6 +26,7 @@ impl PendingUploadVerifier<'_> {
                 return true;
             }
         };
+
         let Some(mut queue) = queue else {
             self.send_pending_state(false);
             return false;

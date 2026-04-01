@@ -700,7 +700,7 @@ where
 {
     store
         .save(CSPP_NAMESPACE_ID_KEY.into(), namespace_id.to_owned())
-        .map_err(|error| CloudBackupError::Internal(format!("save namespace_id: {error}")))
+        .map_err_prefix(CloudBackupError::Internal, "save namespace_id")
 }
 
 fn try_restore_from_local_master_key<S>(

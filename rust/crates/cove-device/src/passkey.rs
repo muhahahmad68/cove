@@ -3,6 +3,8 @@ use std::sync::Arc;
 use once_cell::sync::OnceCell;
 use tracing::warn;
 
+static REF: OnceCell<PasskeyAccess> = OnceCell::new();
+
 #[derive(Debug, Clone, Hash, Eq, PartialEq, uniffi::Error, thiserror::Error)]
 #[uniffi::export(Display)]
 pub enum PasskeyError {
@@ -85,8 +87,6 @@ pub trait PasskeyProvider: Send + Sync + std::fmt::Debug + 'static {
         credential_id: Vec<u8>,
     ) -> PasskeyCredentialPresence;
 }
-
-static REF: OnceCell<PasskeyAccess> = OnceCell::new();
 
 #[derive(Debug, Clone, uniffi::Object)]
 pub struct PasskeyAccess(Arc<Box<dyn PasskeyProvider>>);

@@ -40,46 +40,7 @@ struct CloudBackupDetailScreen: View {
 
     var body: some View {
         Form {
-            if isUnsupportedPasskeyProvider {
-                UnsupportedPasskeyProviderContent(manager: manager)
-            } else if isPasskeyMissing {
-                MissingPasskeyContent(manager: manager)
-            } else {
-                if isVerifying, !hasVerificationResult {
-                    Section {
-                        VStack {
-                            ProgressView("Verifying cloud backup...")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                    }
-                } else if let detail = manager.detail, !isCancelled {
-                    DetailFormContent(
-                        detail: detail,
-                        syncHealth: syncHealth,
-                        manager: manager
-                    )
-                } else if shouldShowLoadingState {
-                    Section {
-                        VStack(spacing: 12) {
-                            ProgressView("Loading cloud backup...")
-
-                            Text("Finishing setup and fetching backup details")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                    }
-                }
-
-                VerificationSection(
-                    manager: manager,
-                    onRecreate: { showRecreateConfirmation = true },
-                    onReinitialize: { showReinitializeConfirmation = true }
-                )
-            }
+            formContent
         }
         .navigationTitle("Cloud Backup")
         .navigationBarTitleDisplayMode(.inline)
@@ -146,6 +107,54 @@ struct CloudBackupDetailScreen: View {
 
     private func refreshSyncHealth() {
         syncHealth = ICloudDriveHelper.shared.overallSyncHealth()
+    }
+
+    @ViewBuilder
+    private var formContent: some View {
+        if isUnsupportedPasskeyProvider {
+            UnsupportedPasskeyProviderContent(manager: manager)
+        } else if isPasskeyMissing {
+            MissingPasskeyContent(manager: manager)
+        } else {
+            backupStatusContent
+            VerificationSection(
+                manager: manager,
+                onRecreate: { showRecreateConfirmation = true },
+                onReinitialize: { showReinitializeConfirmation = true }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var backupStatusContent: some View {
+        if isVerifying, !hasVerificationResult {
+            Section {
+                VStack {
+                    ProgressView("Verifying cloud backup...")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+        } else if let detail = manager.detail, !isCancelled {
+            DetailFormContent(
+                detail: detail,
+                syncHealth: syncHealth,
+                manager: manager
+            )
+        } else if shouldShowLoadingState {
+            Section {
+                VStack(spacing: 12) {
+                    ProgressView("Loading cloud backup...")
+
+                    Text("Finishing setup and fetching backup details")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+        }
     }
 }
 

@@ -568,9 +568,7 @@ final class ICloudDriveHelper: @unchecked Sendable {
         }
 
         guard values.isUbiquitousItem == true else { return .notUbiquitous }
-
         if values.ubiquitousItemIsUploaded == true { return .uploaded }
-
         if let error = values.ubiquitousItemUploadingError { return .failed(error) }
 
         return .uploading
@@ -617,11 +615,8 @@ final class ICloudDriveHelper: @unchecked Sendable {
         }
 
         guard values.isUbiquitousItem == true else { return .notUbiquitous }
-
         if values.ubiquitousItemDownloadingStatus == .current { return .current }
-
         if let error = values.ubiquitousItemDownloadingError { return .failed(error) }
-
         if values.ubiquitousItemIsDownloading == true { return .downloading }
 
         return .notDownloaded
@@ -738,10 +733,9 @@ final class ICloudDriveHelper: @unchecked Sendable {
             "isBackupUploaded: recordId=\(recordId.prefix(12))… state=\(state) usedMetadata=\(usedMetadata)"
         )
 
-        return if case .uploaded = state {
-            true
-        } else {
-            false
+        switch state {
+        case .uploaded: return true
+        default: return false
         }
     }
 
@@ -754,9 +748,7 @@ final class ICloudDriveHelper: @unchecked Sendable {
 
     /// Checks sync health of all files in namespace directories
     func overallSyncHealth() -> SyncHealth {
-        guard let namespacesRoot = try? namespacesRootURL() else {
-            return .unavailable
-        }
+        guard let namespacesRoot = try? namespacesRootURL() else { return .unavailable }
 
         guard
             let namespaceDirs = try? FileManager.default.contentsOfDirectory(

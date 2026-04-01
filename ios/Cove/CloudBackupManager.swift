@@ -68,10 +68,8 @@ final class CloudBackupManager: AnyReconciler, CloudBackupManagerReconciler, @un
 
     var isConfigured: Bool {
         switch state.verificationMetadata {
-        case .notConfigured:
-            false
-        case .configuredNeverVerified, .verified, .needsVerification:
-            true
+        case .notConfigured: false
+        case .configuredNeverVerified, .verified, .needsVerification: true
         }
     }
 

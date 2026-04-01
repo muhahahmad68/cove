@@ -103,12 +103,14 @@ impl<'a> LocalKeyVerifier<'a> {
         }
 
         if verified {
-            LocalKeyProof::Verified
-        } else if had_wrong_key {
-            LocalKeyProof::WrongKey
-        } else {
-            LocalKeyProof::Inconclusive
+            return LocalKeyProof::Verified;
         }
+
+        if had_wrong_key {
+            return LocalKeyProof::WrongKey;
+        }
+
+        LocalKeyProof::Inconclusive
     }
 }
 

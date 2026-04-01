@@ -3,7 +3,7 @@ use cove_device::passkey::{PasskeyAccess, PasskeyError};
 use rand::RngExt as _;
 use tracing::info;
 
-use super::super::{CloudBackupError, RP_ID};
+use super::super::{CloudBackupError, PASSKEY_RP_ID};
 use super::load_stored_credential_id;
 use super::session::VerificationSession;
 
@@ -38,7 +38,7 @@ pub(super) fn authenticate_with_policy(
         if let Some(ref credential_id) = load_stored_credential_id(keychain) {
             let challenge: Vec<u8> = rand::rng().random::<[u8; 32]>().to_vec();
             match passkey.authenticate_with_prf(
-                RP_ID.to_string(),
+                PASSKEY_RP_ID.to_string(),
                 credential_id.clone(),
                 prf_salt.to_vec(),
                 challenge,
@@ -77,7 +77,7 @@ pub(super) fn authenticate_with_policy(
 
     let challenge: Vec<u8> = rand::rng().random::<[u8; 32]>().to_vec();
     let discovered = match passkey.discover_and_authenticate_with_prf(
-        RP_ID.to_string(),
+        PASSKEY_RP_ID.to_string(),
         prf_salt.to_vec(),
         challenge,
     ) {

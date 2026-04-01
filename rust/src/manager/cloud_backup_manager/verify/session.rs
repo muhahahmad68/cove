@@ -10,7 +10,7 @@ use zeroize::Zeroizing;
 
 use super::super::{
     CloudBackupDetail, CloudBackupError, DeepVerificationFailure, DeepVerificationReport,
-    DeepVerificationResult, RP_ID, RustCloudBackupManager, VerificationFailureKind,
+    DeepVerificationResult, PASSKEY_RP_ID, RustCloudBackupManager, VerificationFailureKind,
     cloud_inventory::CloudWalletInventory,
 };
 use super::load_stored_credential_id;
@@ -445,7 +445,7 @@ impl<'a> VerificationSession<'a> {
     /// passkey is durably missing and the user needs repair
     fn resolve_cancellation_outcome(&self) -> DeepVerificationResult {
         if let Some(credential_id) = load_stored_credential_id(&self.keychain) {
-            match self.passkey.check_passkey_presence(RP_ID.to_string(), credential_id) {
+            match self.passkey.check_passkey_presence(PASSKEY_RP_ID.to_string(), credential_id) {
                 PasskeyCredentialPresence::Present => {
                     info!("Passkey picker cancelled but stored credential still exists");
                     cancellation_outcome(PasskeyCredentialPresence::Present, self.detail())

@@ -35,7 +35,7 @@ use super::cloud_backup_detail_manager::{
 
 type LocalWalletSecret = crate::backup::model::WalletSecret;
 
-const RP_ID: &str = "covebitcoinwallet.com";
+const PASSKEY_RP_ID: &str = "covebitcoinwallet.com";
 type Message = CloudBackupReconcileMessage;
 
 pub static CLOUD_BACKUP_MANAGER: LazyLock<Arc<RustCloudBackupManager>> =

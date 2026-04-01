@@ -9,7 +9,7 @@ use cove_cspp::wallet_crypto;
 use cove_device::cloud_storage::CloudStorage;
 use cove_device::keychain::Keychain;
 use cove_device::passkey::{PasskeyAccess, PasskeyError};
-use cove_types::network::Network;
+use cove_types::{WalletId, network::Network};
 use cove_util::ResultExt as _;
 use rand::RngExt as _;
 use strum::IntoEnumIterator as _;
@@ -17,7 +17,7 @@ use tracing::{info, warn};
 use zeroize::{Zeroize, Zeroizing};
 
 use super::{
-    CloudBackupError, LocalDescriptorPair, LocalWalletMode, LocalWalletSecret, RP_ID,
+    CloudBackupError, LocalDescriptorPair, LocalWalletMode, LocalWalletSecret, PASSKEY_RP_ID,
     RustCloudBackupManager,
 };
 use crate::database::Database;
@@ -107,7 +107,7 @@ pub(super) fn discover_or_create_prf_key_without_persisting(
     let prf_salt: [u8; 32] = rand::rng().random();
 
     match passkey.discover_and_authenticate_with_prf(
-        RP_ID.to_string(),
+        PASSKEY_RP_ID.to_string(),
         prf_salt.to_vec(),
         random_challenge(),
     ) {
@@ -205,18 +205,18 @@ pub(super) fn try_match_namespace_with_passkey(
     }
 
     if downloaded.is_empty() {
-        return if had_download_failures {
-            Ok(NamespaceMatchOutcome::Inconclusive)
-        } else {
-            Ok(NamespaceMatchOutcome::UnsupportedVersions)
-        };
+        if had_download_failures {
+            return Ok(NamespaceMatchOutcome::Inconclusive);
+        }
+
+        return Ok(NamespaceMatchOutcome::UnsupportedVersions);
     }
 
     // discovery auth with first downloaded backup's salt
     let first_prf_salt = downloaded[0].1.prf_salt;
 
     let discovered = match passkey.discover_and_authenticate_with_prf(
-        RP_ID.to_string(),
+        PASSKEY_RP_ID.to_string(),
         first_prf_salt.to_vec(),
         random_challenge(),
     ) {
@@ -242,9 +242,9 @@ pub(super) fn try_match_namespace_with_passkey(
     }
 
     // try remaining with targeted auth using each namespace's own salt
-    for (ns, encrypted) in &downloaded[1..] {
-        let ns_prf_output = match passkey.authenticate_with_prf(
-            RP_ID.to_string(),
+    for (namespace, encrypted) in &downloaded[1..] {
+        let namespace_prf_output = match passkey.authenticate_with_prf(
+            PASSKEY_RP_ID.to_string(),
             discovered.credential_id.clone(),
             encrypted.prf_salt.to_vec(),
             random_challenge(),
@@ -254,21 +254,22 @@ pub(super) fn try_match_namespace_with_passkey(
                 return Ok(NamespaceMatchOutcome::UserDeclined);
             }
             Err(error) => {
-                warn!("Targeted auth failed for namespace {ns}: {error}");
+                warn!("Targeted auth failed for namespace {namespace}: {error}");
                 continue;
             }
         };
 
-        let ns_prf_key = match prf_output_to_key(ns_prf_output) {
+        let namespace_prf_key = match prf_output_to_key(namespace_prf_output) {
             Ok(key) => key,
             Err(_) => continue,
         };
 
-        if let Ok(master_key) = master_key_crypto::decrypt_master_key(encrypted, &ns_prf_key) {
+        if let Ok(master_key) = master_key_crypto::decrypt_master_key(encrypted, &namespace_prf_key)
+        {
             return Ok(NamespaceMatchOutcome::Matched(NamespaceMatch {
-                namespace_id: ns.clone(),
+                namespace_id: namespace.clone(),
                 master_key,
-                prf_key: ns_prf_key,
+                prf_key: namespace_prf_key,
                 prf_salt: encrypted.prf_salt,
                 credential_id: discovered.credential_id.clone(),
             }));
@@ -277,12 +278,14 @@ pub(super) fn try_match_namespace_with_passkey(
 
     // none matched
     if had_download_failures {
-        Ok(NamespaceMatchOutcome::Inconclusive)
-    } else if had_unsupported_versions {
-        Ok(NamespaceMatchOutcome::UnsupportedVersions)
-    } else {
-        Ok(NamespaceMatchOutcome::NoMatch)
+        return Ok(NamespaceMatchOutcome::Inconclusive);
     }
+
+    if had_unsupported_versions {
+        return Ok(NamespaceMatchOutcome::UnsupportedVersions);
+    }
+
+    Ok(NamespaceMatchOutcome::NoMatch)
 }
 
 /// Encrypt and hand off all local wallets to the given namespace
@@ -405,7 +408,6 @@ pub(super) fn restore_single_wallet(
     )>,
 ) -> Result<(), CloudBackupError> {
     let wallet = download_wallet_backup(cloud, namespace, record_id, critical_key)?;
-
     restore_downloaded_wallet_for_restore(&wallet, existing_fingerprints)
 }
 
@@ -449,6 +451,7 @@ pub(super) fn download_wallet_backup(
 
     let entry = wallet_crypto::decrypt_wallet_backup(&encrypted, critical_key)
         .map_err_prefix("decrypt wallet", CloudBackupError::Crypto)?;
+
     let metadata = serde_json::from_value(entry.metadata.clone())
         .map_err_prefix("parse wallet metadata", CloudBackupError::Internal)?;
 
@@ -463,7 +466,7 @@ pub(super) fn create_new_prf_key(
     let prf_salt: [u8; 32] = rand::rng().random();
     let credential_id = passkey
         .create_passkey(
-            RP_ID.to_string(),
+            PASSKEY_RP_ID.to_string(),
             rand::rng().random::<[u8; 16]>().to_vec(),
             random_challenge(),
         )
@@ -471,7 +474,7 @@ pub(super) fn create_new_prf_key(
 
     let prf_output = passkey
         .authenticate_with_prf(
-            RP_ID.to_string(),
+            PASSKEY_RP_ID.to_string(),
             credential_id.clone(),
             prf_salt.to_vec(),
             random_challenge(),
@@ -488,7 +491,7 @@ fn create_new_prf_key_for_wrapper_repair(
     let prf_salt: [u8; 32] = rand::rng().random();
     let credential_id = passkey
         .create_passkey(
-            RP_ID.to_string(),
+            PASSKEY_RP_ID.to_string(),
             rand::rng().random::<[u8; 16]>().to_vec(),
             random_challenge(),
         )
@@ -496,7 +499,7 @@ fn create_new_prf_key_for_wrapper_repair(
 
     let prf_output = passkey
         .authenticate_with_prf(
-            RP_ID.to_string(),
+            PASSKEY_RP_ID.to_string(),
             credential_id.clone(),
             prf_salt.to_vec(),
             random_challenge(),
@@ -636,29 +639,7 @@ pub(super) fn build_wallet_entry(
                 )));
             }
         },
-        WalletType::Cold => {
-            let is_tap_signer = metadata
-                .hardware_metadata
-                .as_ref()
-                .is_some_and(|hardware| hardware.is_tap_signer());
-
-            if is_tap_signer {
-                match keychain.get_tap_signer_backup(id) {
-                    Ok(Some(backup)) => CloudWalletSecret::TapSignerBackup(backup),
-                    Ok(None) => {
-                        warn!("Tap signer wallet '{name}' has no backup, exporting without it");
-                        CloudWalletSecret::WatchOnly
-                    }
-                    Err(error) => {
-                        return Err(CloudBackupError::Internal(format!(
-                            "failed to read tap signer backup for '{name}': {error}"
-                        )));
-                    }
-                }
-            } else {
-                CloudWalletSecret::WatchOnly
-            }
-        }
+        WalletType::Cold => build_cold_wallet_secret(keychain, metadata, id, name)?,
         WalletType::XpubOnly | WalletType::WatchOnly => CloudWalletSecret::WatchOnly,
     };
 
@@ -700,6 +681,31 @@ pub(super) fn build_wallet_entry(
         xpub,
         wallet_mode,
     })
+}
+
+fn build_cold_wallet_secret(
+    keychain: &Keychain,
+    metadata: &WalletMetadata,
+    id: &WalletId,
+    name: &str,
+) -> Result<CloudWalletSecret, CloudBackupError> {
+    let is_tap_signer =
+        metadata.hardware_metadata.as_ref().is_some_and(|hardware| hardware.is_tap_signer());
+
+    if !is_tap_signer {
+        return Ok(CloudWalletSecret::WatchOnly);
+    }
+
+    match keychain.get_tap_signer_backup(id) {
+        Ok(Some(backup)) => Ok(CloudWalletSecret::TapSignerBackup(backup)),
+        Ok(None) => {
+            warn!("Tap signer wallet '{name}' has no backup, exporting without it");
+            Ok(CloudWalletSecret::WatchOnly)
+        }
+        Err(error) => Err(CloudBackupError::Internal(format!(
+            "failed to read tap signer backup for '{name}': {error}"
+        ))),
+    }
 }
 
 #[cfg(test)]

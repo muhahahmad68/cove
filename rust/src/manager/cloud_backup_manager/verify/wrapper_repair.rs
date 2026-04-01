@@ -9,7 +9,9 @@ use rand::RngExt as _;
 use tracing::info;
 use zeroize::Zeroizing;
 
-use super::super::{CloudBackupError, RP_ID, RustCloudBackupManager, cspp_master_key_record_id};
+use super::super::{
+    CloudBackupError, PASSKEY_RP_ID, RustCloudBackupManager, cspp_master_key_record_id,
+};
 use crate::manager::cloud_backup_manager::wallets::{
     create_prf_key_without_persisting, discover_or_create_prf_key_without_persisting,
 };
@@ -218,7 +220,7 @@ impl<'a> WrapperRepairOperation<'a> {
                 let prf_output = self
                     .passkey
                     .authenticate_with_prf(
-                        RP_ID.to_owned(),
+                        PASSKEY_RP_ID.to_owned(),
                         credential_id.clone(),
                         prf_salt.to_vec(),
                         challenge,

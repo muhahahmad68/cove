@@ -24,6 +24,9 @@ use crate::database::Database;
 use crate::database::cloud_backup::{PersistedCloudBackupState, PersistedCloudBackupStatus};
 use crate::wallet::metadata::{WalletMetadata, WalletType};
 
+const UPLOAD_WALLET_RECOVERY_MESSAGE: &str =
+    "Cloud backup needs verification before wallets can be uploaded";
+
 #[derive(Zeroize)]
 pub(super) struct UnpersistedPrfKey {
     pub(super) prf_key: [u8; 32],
@@ -48,9 +51,16 @@ impl RustCloudBackupManager {
 
         let namespace = self.current_namespace_id()?;
         let cspp = cove_cspp::Cspp::new(Keychain::global().clone());
-        let master_key = cspp
-            .get_or_create_master_key()
-            .map_err_prefix("master key", CloudBackupError::Internal)?;
+        let master_key = match cspp
+            .load_master_key_from_store()
+            .map_err_prefix("load local master key", CloudBackupError::Internal)?
+        {
+            Some(master_key) => master_key,
+            None => self.recover_local_master_key_from_cloud_without_discovery(
+                &namespace,
+                UPLOAD_WALLET_RECOVERY_MESSAGE,
+            )?,
+        };
 
         let critical_key = Zeroizing::new(master_key.critical_data_key());
         let cloud = CloudStorage::global();

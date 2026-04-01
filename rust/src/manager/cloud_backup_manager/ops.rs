@@ -763,7 +763,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::{Arc, OnceLock};
 
     use cove_cspp::CsppStore;
     use cove_device::cloud_storage::{CloudStorage, CloudStorageAccess, CloudStorageError};
@@ -774,6 +774,7 @@ mod tests {
         DiscoveredPasskeyResult, PasskeyAccess, PasskeyCredentialPresence, PasskeyError,
         PasskeyProvider,
     };
+    use parking_lot::Mutex;
 
     use super::*;
 
@@ -790,17 +791,17 @@ mod tests {
         type Error = String;
 
         fn save(&self, key: String, value: String) -> Result<(), Self::Error> {
-            *self.0.save_count.lock().unwrap() += 1;
-            self.0.entries.lock().unwrap().insert(key, value);
+            *self.0.save_count.lock() += 1;
+            self.0.entries.lock().insert(key, value);
             Ok(())
         }
 
         fn get(&self, key: String) -> Option<String> {
-            self.0.entries.lock().unwrap().get(&key).cloned()
+            self.0.entries.lock().get(&key).cloned()
         }
 
         fn delete(&self, key: String) -> bool {
-            self.0.entries.lock().unwrap().remove(&key).is_some()
+            self.0.entries.lock().remove(&key).is_some()
         }
     }
 
@@ -813,7 +814,7 @@ mod tests {
 
     impl MockKeychain {
         fn reset(&self) {
-            self.entries.lock().unwrap().clear();
+            self.entries.lock().clear();
         }
     }
 
@@ -823,16 +824,16 @@ mod tests {
             key: String,
             value: String,
         ) -> Result<(), cove_device::keychain::KeychainError> {
-            self.entries.lock().unwrap().insert(key, value);
+            self.entries.lock().insert(key, value);
             Ok(())
         }
 
         fn get(&self, key: String) -> Option<String> {
-            self.entries.lock().unwrap().get(&key).cloned()
+            self.entries.lock().get(&key).cloned()
         }
 
         fn delete(&self, key: String) -> bool {
-            self.entries.lock().unwrap().remove(&key).is_some()
+            self.entries.lock().remove(&key).is_some()
         }
     }
 
@@ -840,6 +841,7 @@ mod tests {
     struct MockCloudState {
         wallet_files: HashMap<String, Vec<String>>,
         upload_master_key_error: Option<CloudStorageError>,
+        uploaded_wallet_backups: Vec<(String, String)>,
     }
 
     #[derive(Debug, Clone, Default)]
@@ -849,16 +851,20 @@ mod tests {
 
     impl MockCloudStorage {
         fn reset(&self) {
-            *self.state.lock().unwrap() = MockCloudState::default();
+            *self.state.lock() = MockCloudState::default();
         }
 
         fn set_wallet_files(&self, namespace: String, wallet_files: Vec<String>) {
-            self.state.lock().unwrap().wallet_files.insert(namespace, wallet_files);
+            self.state.lock().wallet_files.insert(namespace, wallet_files);
         }
 
         fn fail_master_key_upload(&self, message: &str) {
-            self.state.lock().unwrap().upload_master_key_error =
+            self.state.lock().upload_master_key_error =
                 Some(CloudStorageError::UploadFailed(message.into()));
+        }
+
+        fn uploaded_wallet_backup_count(&self) -> usize {
+            self.state.lock().uploaded_wallet_backups.len()
         }
     }
 
@@ -868,7 +874,7 @@ mod tests {
             _namespace: String,
             _data: Vec<u8>,
         ) -> Result<(), CloudStorageError> {
-            if let Some(error) = self.state.lock().unwrap().upload_master_key_error.clone() {
+            if let Some(error) = self.state.lock().upload_master_key_error.clone() {
                 return Err(error);
             }
 
@@ -877,10 +883,11 @@ mod tests {
 
         fn upload_wallet_backup(
             &self,
-            _namespace: String,
-            _record_id: String,
+            namespace: String,
+            record_id: String,
             _data: Vec<u8>,
         ) -> Result<(), CloudStorageError> {
+            self.state.lock().uploaded_wallet_backups.push((namespace, record_id));
             Ok(())
         }
 
@@ -908,11 +915,11 @@ mod tests {
         }
 
         fn list_namespaces(&self) -> Result<Vec<String>, CloudStorageError> {
-            Ok(self.state.lock().unwrap().wallet_files.keys().cloned().collect())
+            Ok(self.state.lock().wallet_files.keys().cloned().collect())
         }
 
         fn list_wallet_files(&self, namespace: String) -> Result<Vec<String>, CloudStorageError> {
-            Ok(self.state.lock().unwrap().wallet_files.get(&namespace).cloned().unwrap_or_default())
+            Ok(self.state.lock().wallet_files.get(&namespace).cloned().unwrap_or_default())
         }
 
         fn is_backup_uploaded(
@@ -1119,5 +1126,30 @@ mod tests {
 
         let cspp = cove_cspp::Cspp::new(Keychain::global().clone());
         assert!(cspp.load_master_key_from_store().unwrap().is_none());
+    }
+
+    #[test]
+    fn backup_wallets_does_not_create_master_key_or_upload_when_missing() {
+        let globals = test_globals();
+        globals.reset();
+
+        let namespace = "existing-namespace";
+        Keychain::global().save(CSPP_NAMESPACE_ID_KEY.into(), namespace.into()).unwrap();
+
+        let manager = RustCloudBackupManager::init();
+        let mut metadata = WalletMetadata::preview_new();
+        metadata.wallet_type = crate::wallet::metadata::WalletType::WatchOnly;
+
+        let error = manager.do_backup_wallets(&[metadata]).unwrap_err();
+
+        assert!(matches!(
+            error,
+            CloudBackupError::RecoveryRequired(message)
+                if message == "Cloud backup needs verification before wallets can be uploaded"
+        ));
+
+        let cspp = cove_cspp::Cspp::new(Keychain::global().clone());
+        assert!(cspp.load_master_key_from_store().unwrap().is_none());
+        assert_eq!(globals.cloud.uploaded_wallet_backup_count(), 0);
     }
 }

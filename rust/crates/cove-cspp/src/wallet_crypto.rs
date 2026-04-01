@@ -95,6 +95,32 @@ mod tests {
     }
 
     #[test]
+    fn reencrypting_with_fresh_random_salt_stays_decryptable() {
+        let entry = test_entry();
+        let critical_key = [42u8; 32];
+
+        let enc1 = encrypt_wallet_entry(&entry, &critical_key).unwrap();
+        let enc2 = encrypt_wallet_entry(&entry, &critical_key).unwrap();
+
+        assert_ne!(enc1.wallet_salt, enc2.wallet_salt);
+        assert_ne!(enc1.nonce, enc2.nonce);
+
+        let dec1 = decrypt_wallet_backup(&enc1, &critical_key).unwrap();
+        let dec2 = decrypt_wallet_backup(&enc2, &critical_key).unwrap();
+
+        assert_eq!(dec1.wallet_id, entry.wallet_id);
+        assert_eq!(dec2.wallet_id, entry.wallet_id);
+        assert_eq!(dec1.wallet_mode, entry.wallet_mode);
+        assert_eq!(dec2.wallet_mode, entry.wallet_mode);
+        assert!(
+            matches!(dec1.secret, WalletSecret::Mnemonic(ref m) if m == "abandon abandon abandon")
+        );
+        assert!(
+            matches!(dec2.secret, WalletSecret::Mnemonic(ref m) if m == "abandon abandon abandon")
+        );
+    }
+
+    #[test]
     fn wrong_key_fails() {
         let entry = test_entry();
         let critical_key = [42u8; 32];

@@ -8,8 +8,23 @@ use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use arc_swap::ArcSwapOption;
+use tracing::error;
+
+/// Typed marker for unsupported database version errors, embedded inside `io::Error`
+/// so `io_err_to_db_error` can downcast instead of string-matching
+#[derive(Debug, derive_more::Display, thiserror::Error)]
+#[display("unsupported encrypted database version: {_0}")]
+struct UnsupportedDatabaseVersion(u8);
+
+/// Typed marker for HMAC mismatch errors, embedded inside `io::Error`
+/// so `io_err_to_db_error` can downcast instead of string-matching
+#[derive(Debug, derive_more::Display, thiserror::Error)]
+#[display("header integrity check failed: HMAC mismatch (wrong key or corrupted header)")]
+struct HmacMismatch;
 
 const BLOCK_SIZE: usize = 4096;
 const NONCE_LEN: usize = 24;
@@ -35,24 +50,29 @@ const HEADER_TAG_LEN: usize = 32;
 
 type HmacSha256 = Hmac<Sha256>;
 
-static ENCRYPTION_KEY: OnceLock<[u8; 32]> = OnceLock::new();
+static ENCRYPTION_KEY: ArcSwapOption<[u8; 32]> = ArcSwapOption::const_empty();
 
-/// Set the global encryption key, must be called once before any database is opened.
+/// Set the global encryption key, must be called once before any database is opened
 ///
-/// Idempotent: no-op if already set. Debug builds assert the same key is provided
+/// First-set semantics: no-op if already set. Debug builds assert the same key is provided
 pub fn set_encryption_key(key: [u8; 32]) {
-    if let Err(attempted) = ENCRYPTION_KEY.set(key) {
+    let new = Arc::new(key);
+    let prev = ENCRYPTION_KEY.compare_and_swap(&None::<Arc<[u8; 32]>>, Some(Arc::clone(&new)));
+    if prev.is_some() {
+        if prev.as_deref() != Some(&key) {
+            error!("set_encryption_key called with a different key than the one already set");
+        }
         debug_assert_eq!(
-            ENCRYPTION_KEY.get().expect("just failed to set, must exist"),
-            &attempted,
+            prev.as_deref(),
+            Some(&key),
             "set_encryption_key called with a different key"
         );
     }
 }
 
 /// Get the global encryption key, returns None if not yet set
-pub fn encryption_key() -> Option<&'static [u8; 32]> {
-    ENCRYPTION_KEY.get()
+pub fn encryption_key() -> Option<[u8; 32]> {
+    ENCRYPTION_KEY.load_full().map(|arc| *arc)
 }
 
 pub struct EncryptedBackend {
@@ -110,10 +130,7 @@ fn verify_header_tag(key: &[u8; 32], header: &[u8; HEADER_SIZE]) -> io::Result<(
     let stored_tag = &header[HEADER_TAG_OFFSET..HEADER_TAG_OFFSET + HEADER_TAG_LEN];
     let expected_tag = compute_header_tag(key, header);
     if stored_tag != expected_tag {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "header integrity check failed: HMAC mismatch (wrong key or corrupted header)",
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, HmacMismatch));
     }
     Ok(())
 }
@@ -241,7 +258,7 @@ impl EncryptedBackend {
             v => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("unsupported encrypted database version: {v}"),
+                    UnsupportedDatabaseVersion(v),
                 ));
             }
         }
@@ -295,7 +312,7 @@ impl EncryptedBackend {
 /// Returns Ok(()) if the key is valid or the file doesn't exist.
 /// Returns Err(HeaderIntegrity) on key mismatch
 pub fn verify_database_key(path: &Path) -> Result<(), super::error::DatabaseError> {
-    use super::error::DatabaseError;
+    use super::error::{DatabaseError, UnsupportedDbVersion};
 
     if !path.exists() {
         return Ok(());
@@ -316,17 +333,17 @@ pub fn verify_database_key(path: &Path) -> Result<(), super::error::DatabaseErro
     let version = header[VERSION_OFFSET];
     match version {
         VERSION_V2 => {
-            verify_header_tag(key, &header).map_err(|e| DatabaseError::HeaderIntegrity {
+            verify_header_tag(&key, &header).map_err(|e| DatabaseError::HeaderIntegrity {
                 path: path_str,
                 error: e.to_string(),
             })?;
         }
-        VERSION_V1 => verify_v1_database_key(&file, &path_str, key)?,
+        VERSION_V1 => verify_v1_database_key(&file, &path_str, &key)?,
         version => {
-            return Err(DatabaseError::HeaderIntegrity {
+            return Err(DatabaseError::UnsupportedVersion(UnsupportedDbVersion {
                 path: path_str,
-                error: format!("unsupported encrypted database version: {version}"),
-            });
+                version,
+            }));
         }
     }
 
@@ -348,7 +365,7 @@ pub fn open_or_create_database(path: &Path) -> Result<redb::Database, super::err
         return Err(DatabaseError::PlaintextNotAllowed { path: path_str });
     }
 
-    let backend = EncryptedBackend::create_or_open(path, key)
+    let backend = EncryptedBackend::create_or_open(path, &key)
         .map_err(|e| io_err_to_db_error(&path_str, e))?;
 
     redb::Database::builder()
@@ -359,20 +376,27 @@ pub fn open_or_create_database(path: &Path) -> Result<redb::Database, super::err
 
 /// Map an io::Error to the appropriate DatabaseError variant
 fn io_err_to_db_error(path: &str, e: io::Error) -> super::error::DatabaseError {
-    use super::error::DatabaseError;
+    use super::error::{DatabaseError, UnsupportedDbVersion};
 
-    let msg = e.to_string();
+    // downcast typed inner errors before falling back to error kind
+    if let Some(v) =
+        e.get_ref().and_then(|inner| inner.downcast_ref::<UnsupportedDatabaseVersion>())
+    {
+        return DatabaseError::UnsupportedVersion(UnsupportedDbVersion {
+            path: path.to_string(),
+            version: v.0,
+        });
+    }
+    if e.get_ref().is_some_and(|inner| inner.is::<HmacMismatch>()) {
+        return DatabaseError::HeaderIntegrity { path: path.to_string(), error: e.to_string() };
+    }
+
     match e.kind() {
         io::ErrorKind::WouldBlock => DatabaseError::DatabaseAlreadyOpen,
-        io::ErrorKind::InvalidData
-            if msg.contains("HMAC mismatch") || msg.contains("unsupported") =>
-        {
-            DatabaseError::HeaderIntegrity { path: path.to_string(), error: msg }
-        }
         io::ErrorKind::InvalidData => {
-            DatabaseError::CorruptBlock { path: path.to_string(), error: msg }
+            DatabaseError::CorruptBlock { path: path.to_string(), error: e.to_string() }
         }
-        _ => DatabaseError::BackendOpen { path: path.to_string(), error: msg },
+        _ => DatabaseError::BackendOpen { path: path.to_string(), error: e.to_string() },
     }
 }
 
@@ -603,7 +627,7 @@ impl redb::StorageBackend for EncryptedBackend {
 
 #[cfg(test)]
 pub fn set_test_encryption_key() {
-    let _ = ENCRYPTION_KEY.set([0xAB; 32]);
+    ENCRYPTION_KEY.store(Some(Arc::new([0xAB; 32])));
 }
 
 #[cfg(test)]
@@ -827,7 +851,7 @@ mod tests {
         let table_def: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("init_test");
 
         {
-            let backend = EncryptedBackend::create(&path, key).unwrap();
+            let backend = EncryptedBackend::create(&path, &key).unwrap();
             let db = redb::Database::builder().create_with_backend(backend).unwrap();
 
             let write_txn = db.begin_write().unwrap();
@@ -840,7 +864,7 @@ mod tests {
         }
 
         {
-            let backend = EncryptedBackend::open(&path, key).unwrap();
+            let backend = EncryptedBackend::open(&path, &key).unwrap();
             let db = redb::Database::builder().create_with_backend(backend).unwrap();
 
             let read_txn = db.begin_read().unwrap();
@@ -881,7 +905,7 @@ mod tests {
 
         let err = result.unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert!(err.to_string().contains("HMAC mismatch"));
+        assert!(err.get_ref().is_some_and(|inner| inner.is::<HmacMismatch>()));
     }
 
     #[test]
@@ -1008,7 +1032,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert!(err.to_string().contains("HMAC mismatch"));
+        assert!(err.get_ref().is_some_and(|inner| inner.is::<HmacMismatch>()));
     }
 
     #[test]
@@ -1056,7 +1080,7 @@ mod tests {
         let result = EncryptedBackend::open(&path, &key);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("unsupported"));
+        assert!(err.get_ref().is_some_and(|inner| inner.is::<UnsupportedDatabaseVersion>()));
     }
 
     #[test]

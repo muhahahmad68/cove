@@ -11,15 +11,16 @@ use crate::{
     database::{self, Database},
     keychain::{Keychain, KeychainError},
     keys::{Descriptor, Descriptors},
+    manager::cloud_backup_manager::CLOUD_BACKUP_MANAGER,
     mnemonic::MnemonicExt as _,
     multi_format::MultiFormatError,
     tap_card::tap_signer_reader::DeriveInfo,
     xpub::{self, XpubError},
 };
 use balance::Balance;
+use bdk_wallet::KeychainKind;
 use bdk_wallet::bitcoin::bip32::Xpub;
 use bdk_wallet::chain::rusqlite::Connection;
-use bdk_wallet::{KeychainKind, descriptor::ExtendedDescriptor, keys::DescriptorPublicKey};
 use bip39::Mnemonic;
 use cove_bdk::descriptor_ext::DescriptorExt as _;
 use cove_common::consts::GAP_LIMIT;
@@ -355,6 +356,7 @@ impl Wallet {
         )?;
 
         database.wallets.save_new_wallet_metadata(metadata.clone())?;
+        CLOUD_BACKUP_MANAGER.mark_verification_required_after_wallet_change();
 
         Ok(Self { id, metadata, network, bdk: wallet, db: Mutex::new(store.conn) })
     }
@@ -417,6 +419,7 @@ impl Wallet {
         }
 
         database.wallets.save_new_wallet_metadata(metadata.clone())?;
+        CLOUD_BACKUP_MANAGER.mark_verification_required_after_wallet_change();
 
         Ok(Self { id, metadata, network, bdk: wallet, db: Mutex::new(store.conn) })
     }
@@ -551,47 +554,6 @@ impl Wallet {
         transactions
     }
 
-    #[allow(dead_code)]
-    pub fn public_external_descriptor(&self) -> crate::keys::Descriptor {
-        let extended_descriptor: ExtendedDescriptor =
-            self.bdk.public_descriptor(KeychainKind::External).clone();
-
-        crate::keys::Descriptor::from(extended_descriptor)
-    }
-
-    #[allow(dead_code)]
-    pub fn get_pub_key(&self) -> Result<DescriptorPublicKey, WalletError> {
-        use bdk_wallet::miniscript::Descriptor;
-        use bdk_wallet::miniscript::descriptor::ShInner;
-
-        let extended_descriptor: ExtendedDescriptor =
-            self.bdk.public_descriptor(KeychainKind::External).clone();
-
-        let key = match extended_descriptor {
-            Descriptor::Pkh(pk) => pk.into_inner(),
-            Descriptor::Wpkh(pk) => pk.into_inner(),
-            Descriptor::Tr(pk) => pk.internal_key().clone(),
-            Descriptor::Sh(pk) => match pk.into_inner() {
-                ShInner::Wpkh(pk) => pk.into_inner(),
-                _ => {
-                    return Err(WalletError::UnsupportedWallet(
-                        "unsupported wallet bare descriptor not wpkh".to_string(),
-                    ));
-                }
-            },
-            // not sure
-            Descriptor::Bare(pk) => pk.as_inner().iter_pk().next().unwrap(),
-            // multi-sig
-            Descriptor::Wsh(_pk) => {
-                return Err(WalletError::UnsupportedWallet(
-                    "unsupported wallet, multisig".to_string(),
-                ));
-            }
-        };
-
-        Ok(key)
-    }
-
     pub fn get_next_address(&mut self) -> Result<AddressInfoWithDerivation, WalletError> {
         const MAX_ADDRESSES: usize = (GAP_LIMIT - 5) as usize;
 
@@ -675,6 +637,7 @@ impl Wallet {
         database.global_config.select_wallet(id.clone())?;
 
         Updater::send_update(Update::ClearCachedWalletManager(id.clone()));
+        CLOUD_BACKUP_MANAGER.mark_verification_required_after_wallet_change();
         Self::try_load_persisted(id)
     }
 }

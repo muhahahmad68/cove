@@ -195,20 +195,19 @@ pub async fn export_all(password: String) -> Result<BackupResult, BackupError> {
 }
 
 async fn export_labels(id: cove_types::WalletId) -> Result<String, BackupError> {
-    let manager = LabelManager::try_new(id.clone()).map_err(|e| {
-        let error_msg = e.to_string();
+    use crate::database::wallet_data::WalletDataError;
 
-        // v1 encrypted databases are unsupported, delete them
-        if error_msg.contains("unsupported") {
-            tracing::error!("deleting unsupported v1 wallet database for {id}: {error_msg}");
+    let manager = LabelManager::try_new(id.clone()).map_err(|e| {
+        if matches!(&e, WalletDataError::UnsupportedVersion { .. }) {
+            tracing::error!("deleting unsupported v1 wallet database for {id}: {e}");
             if let Err(err) = crate::database::wallet_data::delete_database(&id) {
                 tracing::error!("failed to delete v1 wallet database for {id}: {err}");
             }
         } else {
-            tracing::error!("failed to open wallet database for {id}: {error_msg}");
+            tracing::error!("failed to open wallet database for {id}: {e}");
         }
 
-        BackupError::Gather(error_msg)
+        BackupError::Gather(e.to_string())
     })?;
 
     manager.export().await.map_err(|e| BackupError::Gather(e.to_string()))

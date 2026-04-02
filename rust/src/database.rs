@@ -2,6 +2,7 @@
 //! That will be available across the app, and will be persisted across app launches.
 
 pub mod cbor;
+pub mod cloud_backup;
 pub mod encrypted_backend;
 pub mod error;
 pub mod global_cache;
@@ -20,6 +21,7 @@ use cove_util::result_ext::ResultExt as _;
 use std::{path::PathBuf, sync::Arc};
 
 use arc_swap::ArcSwap;
+use cloud_backup::{CloudBackupStateTable, CloudUploadQueueTable};
 use global_cache::GlobalCacheTable;
 use global_config::GlobalConfigTable;
 use global_flag::GlobalFlagTable;
@@ -40,10 +42,11 @@ pub type Record<T> = record::Record<T>;
 
 #[derive(Debug, Clone, uniffi::Object)]
 pub struct Database {
-    #[allow(dead_code, unused)]
     pub global_flag: GlobalFlagTable,
     pub global_config: GlobalConfigTable,
     pub global_cache: GlobalCacheTable,
+    pub cloud_backup_state: CloudBackupStateTable,
+    pub cloud_upload_queue: CloudUploadQueueTable,
     pub wallets: WalletsTable,
     pub unsigned_transactions: UnsignedTransactionsTable,
     pub historical_prices: HistoricalPriceTable,
@@ -99,6 +102,19 @@ impl Database {
         Arc::clone(&db)
     }
 
+    /// Re-open the database file and swap the global handle
+    ///
+    /// Used by worst-case recovery paths that need to surface errors instead of panicking
+    pub fn try_reinit() -> Result<(), error::DatabaseError> {
+        let Some(arc_swap) = DATABASE.get() else {
+            return Ok(());
+        };
+
+        let db = Self::init()?;
+        arc_swap.swap(Arc::new(db));
+        Ok(())
+    }
+
     fn init() -> Result<Self, error::DatabaseError> {
         #[cfg(test)]
         crate::bootstrap::set_test_bootstrapped();
@@ -115,6 +131,8 @@ impl Database {
         let global_flag = GlobalFlagTable::new(main_db_arc.clone(), &write_txn);
         let global_config = GlobalConfigTable::new(main_db_arc.clone(), &write_txn);
         let global_cache = GlobalCacheTable::new(main_db_arc.clone(), &write_txn);
+        let cloud_backup_state = CloudBackupStateTable::new(main_db_arc.clone(), &write_txn);
+        let cloud_upload_queue = CloudUploadQueueTable::new(main_db_arc.clone(), &write_txn);
         let unsigned_transactions = UnsignedTransactionsTable::new(main_db_arc.clone(), &write_txn);
         let historical_prices = HistoricalPriceTable::new(main_db_arc.clone(), &write_txn);
 
@@ -124,6 +142,8 @@ impl Database {
             global_flag,
             global_config,
             global_cache,
+            cloud_backup_state,
+            cloud_upload_queue,
             wallets,
             unsigned_transactions,
             historical_prices,
@@ -137,7 +157,7 @@ fn get_or_create_main_database() -> Result<redb::Database, error::DatabaseError>
 
 #[cfg(not(test))]
 fn database_location() -> PathBuf {
-    ROOT_DATA_DIR.join("cove.db")
+    ROOT_DATA_DIR.join("cove.encrypted.db")
 }
 
 #[cfg(test)]

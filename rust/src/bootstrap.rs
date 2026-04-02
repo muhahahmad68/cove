@@ -2,13 +2,13 @@ pub mod migration;
 pub use migration::Migration;
 
 use std::sync::{
-    Arc, LazyLock, OnceLock,
+    Arc, LazyLock,
     atomic::{AtomicBool, Ordering},
 };
 
 use cove_util::ResultExt;
 use parking_lot::Mutex;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(uniffi::Enum, Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BootstrapStep {
@@ -142,6 +142,22 @@ pub fn cancel_bootstrap() {
     info!("Bootstrap cancellation requested");
 }
 
+/// Reset bootstrap progress so recovery flows can re-run bootstrap
+///
+/// Clears the bootstrap step, storage bootstrapped flag, cancellation flag,
+/// active migration, and cached CSPP master key. This does not rotate the
+/// local database encryption key, which is expected to remain stable across
+/// restore and re-bootstrap flows
+#[uniffi::export]
+pub fn reset_bootstrap_for_restore() {
+    *BOOTSTRAP_STEP.lock() = BootstrapStep::NotStarted;
+    STORAGE_BOOTSTRAPPED.store(false, Ordering::Release);
+    BOOTSTRAP_CANCELLED.store(false, Ordering::Release);
+    cove_cspp::Cspp::<cove_device::keychain::Keychain>::clear_cached_master_key();
+    migration::set_active_migration(None);
+    info!("Bootstrap state reset for restore");
+}
+
 fn check_cancelled() -> Result<(), AppInitError> {
     if BOOTSTRAP_CANCELLED.load(Ordering::Acquire) {
         Err(AppInitError::Cancelled("bootstrap cancelled by caller".into()))
@@ -172,7 +188,7 @@ fn ensure_rustls_provider_installed() {
     }
 }
 
-static STORAGE_BOOTSTRAPPED: OnceLock<()> = OnceLock::new();
+static STORAGE_BOOTSTRAPPED: AtomicBool = AtomicBool::new(false);
 static BOOTSTRAP_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, uniffi::Error, thiserror::Error)]
@@ -212,19 +228,19 @@ pub fn ensure_storage_bootstrapped() -> Result<(), AppInitError> {
 
 /// Returns the pre-recovery BDK database count (only meaningful when track_progress is true)
 fn ensure_storage_bootstrapped_internal(track_progress: bool) -> Result<u32, AppInitError> {
-    if STORAGE_BOOTSTRAPPED.get().is_some() {
+    if STORAGE_BOOTSTRAPPED.load(Ordering::Acquire) {
         return Ok(0);
     }
 
     let _guard = BOOTSTRAP_LOCK.lock();
 
     // double-check after acquiring lock
-    if STORAGE_BOOTSTRAPPED.get().is_some() {
+    if STORAGE_BOOTSTRAPPED.load(Ordering::Acquire) {
         return Ok(0);
     }
 
     let bdk_count = do_bootstrap(track_progress)?;
-    let _ = STORAGE_BOOTSTRAPPED.set(());
+    STORAGE_BOOTSTRAPPED.store(true, Ordering::Release);
     Ok(bdk_count)
 }
 
@@ -236,21 +252,45 @@ fn do_bootstrap(track_progress: bool) -> Result<u32, AppInitError> {
     }
     info!("Starting storage bootstrap");
 
-    // derive encryption key from master key before any database access
-    let cspp = cove_cspp::Cspp::new(cove_device::keychain::Keychain::global().clone());
-    let master_key = cspp.get_or_create_master_key().map_err_str(AppInitError::KeyDerivation)?;
-
-    let key = master_key.sensitive_data_key();
+    // load or create local DB encryption key from keychain
+    let keychain = cove_device::keychain::Keychain::global();
+    let encrypted_db = cove_common::consts::ROOT_DATA_DIR.join("cove.encrypted.db");
+    let key = match keychain.get_local_encryption_key() {
+        Ok(Some(key)) => key,
+        Ok(None) => {
+            if encrypted_db.exists() {
+                return Err(AppInitError::DatabaseKeyMismatch(
+                    "local encryption key not found but encrypted databases exist".into(),
+                ));
+            }
+            keychain
+                .create_local_encryption_key()
+                .map_err(|e| AppInitError::KeyDerivation(e.to_string()))?
+        }
+        Err(e) => {
+            // partial keychain state: one entry exists but the other is missing
+            if encrypted_db.exists() {
+                return Err(AppInitError::DatabaseKeyMismatch(format!(
+                    "partial encryption key in keychain with existing DB: {e}"
+                )));
+            }
+            // no DB exists, safe to purge partial entries and create fresh
+            warn!("Purging partial local encryption key entries: {e}");
+            keychain.purge_local_encryption_key();
+            keychain
+                .create_local_encryption_key()
+                .map_err(|e| AppInitError::KeyDerivation(e.to_string()))?
+        }
+    };
     crate::database::encrypted_backend::set_encryption_key(key);
 
     if track_progress {
         set_step(BootstrapStep::EncryptionKeySet);
     }
-    info!("Encryption key derived and set");
+    info!("Local encryption key loaded and set");
 
     // verify the key matches the existing database before proceeding
-    let db_path = cove_common::consts::ROOT_DATA_DIR.join("cove.db");
-    crate::database::encrypted_backend::verify_database_key(&db_path)
+    crate::database::encrypted_backend::verify_database_key(&encrypted_db)
         .map_err(map_database_key_verification_error)?;
 
     check_cancelled()?;
@@ -307,6 +347,15 @@ fn do_bootstrap(track_progress: bool) -> Result<u32, AppInitError> {
     Ok(bdk_count)
 }
 
+/// Returns the absolute path to the root data directory
+///
+/// Used by iOS to set isExcludedFromBackup on the data directory,
+/// preventing encrypted database files from being included in device backups
+#[uniffi::export]
+pub fn root_data_dir_path() -> String {
+    cove_common::consts::ROOT_DATA_DIR.to_string_lossy().to_string()
+}
+
 fn map_database_key_verification_error(
     error: crate::database::error::DatabaseError,
 ) -> AppInitError {
@@ -323,7 +372,7 @@ fn map_database_key_verification_error(
 #[cfg(test)]
 pub fn set_test_bootstrapped() {
     crate::database::encrypted_backend::set_test_encryption_key();
-    let _ = STORAGE_BOOTSTRAPPED.set(());
+    STORAGE_BOOTSTRAPPED.store(true, Ordering::Release);
 }
 
 fn set_step(step: BootstrapStep) {

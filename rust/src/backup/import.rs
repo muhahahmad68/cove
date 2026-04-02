@@ -133,7 +133,7 @@ enum RestoreResult {
 ///
 /// Matches import's exact behavior: fingerprint+network+mode first,
 /// falls back to wallet ID for wallets without fingerprints
-pub(super) fn is_wallet_duplicate(
+pub(crate) fn is_wallet_duplicate(
     metadata: &WalletMetadata,
     existing_fingerprints: &[(Fingerprint, Network, WalletMode)],
 ) -> Result<bool, BackupError> {
@@ -159,7 +159,7 @@ pub(super) fn is_wallet_duplicate(
     Ok(false)
 }
 
-pub(super) fn collect_existing_fingerprints()
+pub(crate) fn collect_existing_fingerprints()
 -> Result<Vec<(Fingerprint, Network, WalletMode)>, BackupError> {
     let db = Database::global();
     let mut fingerprints = Vec::new();
@@ -183,7 +183,7 @@ pub(super) fn collect_existing_fingerprints()
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum WalletTypeSecretValidation {
+pub(crate) enum WalletTypeSecretValidation {
     Valid,
     Degraded,
 }
@@ -192,7 +192,7 @@ pub(super) enum WalletTypeSecretValidation {
 ///
 /// Returns Ok(Valid) for correct combos, Ok(Degraded) for importable-but-degraded,
 /// or Err for hard failures that would prevent import
-pub(super) fn validate_wallet_type_secret(
+pub(crate) fn validate_wallet_type_secret(
     wallet_type: &WalletType,
     secret: &WalletSecret,
     name: &str,
@@ -220,6 +220,12 @@ pub(super) fn validate_wallet_type_secret(
             "wallet {name} has mismatched type ({wt:?}) and secret ({s:?})"
         ))),
     }
+}
+
+#[derive(Clone, Copy)]
+enum RestoreSaveBehavior {
+    BackupAsNewWallet,
+    SkipCloudBackup,
 }
 
 async fn restore_wallet(
@@ -301,16 +307,28 @@ where
     })
 }
 
-fn restore_mnemonic_wallet(
+pub(crate) fn restore_mnemonic_wallet(
     metadata: &WalletMetadata,
     mnemonic: Mnemonic,
 ) -> Result<(), (BackupError, Vec<String>)> {
-    with_cleanup(metadata, || restore_mnemonic_wallet_inner(metadata, mnemonic))
+    with_cleanup(metadata, || {
+        restore_mnemonic_wallet_inner(metadata, mnemonic, RestoreSaveBehavior::BackupAsNewWallet)
+    })
+}
+
+pub(crate) fn restore_cloud_mnemonic_wallet(
+    metadata: &WalletMetadata,
+    mnemonic: Mnemonic,
+) -> Result<(), (BackupError, Vec<String>)> {
+    with_cleanup(metadata, || {
+        restore_mnemonic_wallet_inner(metadata, mnemonic, RestoreSaveBehavior::SkipCloudBackup)
+    })
 }
 
 fn restore_mnemonic_wallet_inner(
     metadata: &WalletMetadata,
     mnemonic: Mnemonic,
+    save_behavior: RestoreSaveBehavior,
 ) -> Result<(), BackupError> {
     let keychain = Keychain::global();
     let db = Database::global();
@@ -348,23 +366,33 @@ fn restore_mnemonic_wallet_inner(
         .save_public_descriptor(&metadata.id, ext_descriptor, int_descriptor)
         .map_err(|e| BackupError::Keychain(format!("descriptors for {name}: {e}")))?;
 
-    db.wallets
-        .save_new_wallet_metadata(metadata.clone())
-        .map_err(|e| BackupError::Database(format!("metadata for {name}: {e}")))?;
+    save_restored_wallet_metadata(&db, metadata, name, save_behavior)?;
 
     Ok(())
 }
 
-fn restore_descriptor_wallet(
+pub(crate) fn restore_descriptor_wallet(
     metadata: &WalletMetadata,
     backup: &WalletBackup,
 ) -> Result<(), (BackupError, Vec<String>)> {
-    with_cleanup(metadata, || restore_descriptor_wallet_inner(metadata, backup))
+    with_cleanup(metadata, || {
+        restore_descriptor_wallet_inner(metadata, backup, RestoreSaveBehavior::BackupAsNewWallet)
+    })
+}
+
+pub(crate) fn restore_cloud_descriptor_wallet(
+    metadata: &WalletMetadata,
+    backup: &WalletBackup,
+) -> Result<(), (BackupError, Vec<String>)> {
+    with_cleanup(metadata, || {
+        restore_descriptor_wallet_inner(metadata, backup, RestoreSaveBehavior::SkipCloudBackup)
+    })
 }
 
 fn restore_descriptor_wallet_inner(
     metadata: &WalletMetadata,
     backup: &WalletBackup,
+    save_behavior: RestoreSaveBehavior,
 ) -> Result<(), BackupError> {
     let keychain = Keychain::global();
     let db = Database::global();
@@ -417,17 +445,33 @@ fn restore_descriptor_wallet_inner(
             .map_err(|e| BackupError::Keychain(format!("tap signer backup for {name}: {e}")))?;
     }
 
-    db.wallets
-        .save_new_wallet_metadata(metadata.clone())
-        .map_err(|e| BackupError::Database(format!("metadata for {name}: {e}")))?;
+    save_restored_wallet_metadata(&db, metadata, name, save_behavior)?;
 
     Ok(())
+}
+
+fn save_restored_wallet_metadata(
+    db: &Database,
+    metadata: &WalletMetadata,
+    name: &str,
+    save_behavior: RestoreSaveBehavior,
+) -> Result<(), BackupError> {
+    let save = match save_behavior {
+        RestoreSaveBehavior::BackupAsNewWallet => {
+            db.wallets.save_new_wallet_metadata(metadata.clone())
+        }
+        RestoreSaveBehavior::SkipCloudBackup => {
+            db.wallets.save_restored_wallet_metadata(metadata.clone())
+        }
+    };
+
+    save.map_err(|e| BackupError::Database(format!("metadata for {name}: {e}")))
 }
 
 /// Clean up a partially-imported wallet on failure
 ///
 /// Returns a list of cleanup failures; empty means fully cleaned
-fn cleanup_failed_wallet(metadata: &WalletMetadata) -> Vec<String> {
+pub(crate) fn cleanup_failed_wallet(metadata: &WalletMetadata) -> Vec<String> {
     let wallet_id = &metadata.id;
     let name = &metadata.name;
     let mut failures = Vec::new();

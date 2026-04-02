@@ -5,6 +5,12 @@ private enum AlertState: Equatable {
     case confirmBetaDisable
     case betaEnabled
     case betaError(String)
+    #if DEBUG
+        case confirmWipeCloud
+        case wipeCloudResult(String)
+        case confirmResetLocalState
+        case resetLocalStateResult(String)
+    #endif
 }
 
 struct AboutScreen: View {
@@ -79,6 +85,24 @@ struct AboutScreen: View {
                     }
                 }
             }
+
+            #if DEBUG
+                if isBetaEnabled {
+                    Section("Debug") {
+                        Button(role: .destructive) {
+                            alertState = .init(.confirmWipeCloud)
+                        } label: {
+                            Text("Wipe Cloud Backup")
+                        }
+
+                        Button {
+                            alertState = .init(.confirmResetLocalState)
+                        } label: {
+                            Text("Reset Local Backup State")
+                        }
+                    }
+                }
+            #endif
         }
         .navigationTitle("About")
         .onDisappear { buildTapTimer?.invalidate(); buildTapTimer = nil }
@@ -158,8 +182,72 @@ struct AboutScreen: View {
                 message: error,
                 actions: { Button("OK") { alertState = .none } }
             ).eraseToAny()
+
+        #if DEBUG
+            case .confirmWipeCloud:
+                AlertBuilder(
+                    title: "Wipe Cloud Backup?",
+                    message: "Deletes all iCloud backup files and resets local backup state",
+                    actions: {
+                        Button("Wipe", role: .destructive) {
+                            Task.detached {
+                                let result = Self.debugWipeCloudBackup()
+                                await MainActor.run {
+                                    alertState = .init(.wipeCloudResult(result))
+                                }
+                            }
+                        }
+                        Button("Cancel", role: .cancel) { alertState = .none }
+                    }
+                ).eraseToAny()
+
+            case let .wipeCloudResult(message):
+                AlertBuilder(
+                    title: "Cloud Backup Wiped",
+                    message: message,
+                    actions: { Button("OK") { alertState = .none } }
+                ).eraseToAny()
+
+            case .confirmResetLocalState:
+                AlertBuilder(
+                    title: "Reset Local Backup State?",
+                    message: "Clears local keychain and DB backup state but keeps iCloud files intact. Use this to test the recovery flow.",
+                    actions: {
+                        Button("Reset", role: .destructive) {
+                            RustCloudBackupManager().debugResetCloudBackupState()
+                            alertState = .init(.resetLocalStateResult("Local backup state reset. iCloud files are untouched."))
+                        }
+                        Button("Cancel", role: .cancel) { alertState = .none }
+                    }
+                ).eraseToAny()
+
+            case let .resetLocalStateResult(message):
+                AlertBuilder(
+                    title: "Local State Reset",
+                    message: message,
+                    actions: { Button("OK") { alertState = .none } }
+                ).eraseToAny()
+        #endif
         }
     }
+
+    #if DEBUG
+        private nonisolated static func debugWipeCloudBackup() -> String {
+            let helper = ICloudDriveHelper.shared
+
+            do {
+                let dataDir = try helper.dataDirectoryURL()
+                if FileManager.default.fileExists(atPath: dataDir.path) {
+                    try FileManager.default.removeItem(at: dataDir)
+                }
+            } catch {
+                return "iCloud wipe failed: \(error.localizedDescription)"
+            }
+
+            RustCloudBackupManager().debugResetCloudBackupState()
+            return "All cloud backup data deleted and local state reset"
+        }
+    #endif
 }
 
 #Preview {

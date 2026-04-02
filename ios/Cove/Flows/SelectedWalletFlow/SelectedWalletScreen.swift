@@ -39,6 +39,7 @@ struct SelectedWalletScreen: View {
 
     @State private var showingCopiedPopup = true
     @State private var shouldShowNavBar = false
+    @State private var cloudBackupManager = CloudBackupManager.shared
 
     /// import / export
     @State var exportingBackup: ExportingBackup? = nil
@@ -327,9 +328,11 @@ struct SelectedWalletScreen: View {
                 }
             }
 
-            VerifyReminder(
-                walletId: manager.walletMetadata.id, isVerified: manager.walletMetadata.verified
-            )
+            if !cloudBackupManager.isConfigured {
+                VerifyReminder(
+                    walletId: manager.walletMetadata.id, isVerified: manager.walletMetadata.verified
+                )
+            }
 
             Transactions
                 .environment(manager)

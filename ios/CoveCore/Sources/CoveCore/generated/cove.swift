@@ -3991,13 +3991,9 @@ public protocol GlobalConfigTableProtocol: AnyObject, Sendable {
     
     func clearSelectedWallet() throws 
     
-    func cloudBackup()  -> CloudBackup
-    
     func colorScheme()  -> ColorSchemeSelection
     
     func delete(key: GlobalConfigKey) throws 
-    
-    func deleteCloudBackup() throws 
     
     func deleteHashedPinCode() throws 
     
@@ -4022,8 +4018,6 @@ public protocol GlobalConfigTableProtocol: AnyObject, Sendable {
     func set(key: GlobalConfigKey, value: String) throws 
     
     func setColorScheme(colorScheme: ColorSchemeSelection) throws 
-    
-    func setCloudBackup(value: CloudBackup) throws 
     
     func setHashedPinCode(hashedPinCode: String) throws 
     
@@ -4102,14 +4096,6 @@ open func clearSelectedWallet()throws   {try rustCallWithError(FfiConverterTypeD
 }
 }
     
-open func cloudBackup() -> CloudBackup  {
-    return try!  FfiConverterTypeCloudBackup_lift(try! rustCall() {
-    uniffi_cove_fn_method_globalconfigtable_cloud_backup(
-            self.uniffiCloneHandle(),$0
-    )
-})
-}
-    
 open func colorScheme() -> ColorSchemeSelection  {
     return try!  FfiConverterTypeColorSchemeSelection_lift(try! rustCall() {
     uniffi_cove_fn_method_globalconfigtable_colorscheme(
@@ -4122,13 +4108,6 @@ open func delete(key: GlobalConfigKey)throws   {try rustCallWithError(FfiConvert
     uniffi_cove_fn_method_globalconfigtable_delete(
             self.uniffiCloneHandle(),
         FfiConverterTypeGlobalConfigKey_lower(key),$0
-    )
-}
-}
-    
-open func deleteCloudBackup()throws   {try rustCallWithError(FfiConverterTypeDatabaseError_lift) {
-    uniffi_cove_fn_method_globalconfigtable_delete_cloud_backup(
-            self.uniffiCloneHandle(),$0
     )
 }
 }
@@ -4226,14 +4205,6 @@ open func setColorScheme(colorScheme: ColorSchemeSelection)throws   {try rustCal
     uniffi_cove_fn_method_globalconfigtable_setcolorscheme(
             self.uniffiCloneHandle(),
         FfiConverterTypeColorSchemeSelection_lower(colorScheme),$0
-    )
-}
-}
-    
-open func setCloudBackup(value: CloudBackup)throws   {try rustCallWithError(FfiConverterTypeDatabaseError_lift) {
-    uniffi_cove_fn_method_globalconfigtable_set_cloud_backup(
-            self.uniffiCloneHandle(),
-        FfiConverterTypeCloudBackup_lower(value),$0
     )
 }
 }
@@ -7070,6 +7041,318 @@ public func FfiConverterTypeRustAuthManager_lower(_ value: RustAuthManager) -> U
 
 
 
+public protocol RustCloudBackupManagerProtocol: AnyObject, Sendable {
+    
+    func dispatch(action: CloudBackupManagerAction) 
+    
+    /**
+     * Back up a newly created wallet, fire-and-forget
+     *
+     * Returns immediately if cloud backup isn't enabled (e.g. during restore)
+     */
+    func backupNewWallet(metadata: WalletMetadata) 
+    
+    /**
+     * Number of wallets in the cloud backup
+     */
+    func backupWalletCount()  -> UInt32?
+    
+    func currentStatus()  -> CloudBackupStatus
+    
+    /**
+     * Reset local cloud backup state (keychain + DB) without touching iCloud
+     *
+     * Debug-only: pair with Swift-side iCloud wipe for full reset
+     */
+    func debugResetCloudBackupState() 
+    
+    func hasPendingCloudUploadVerification()  -> Bool
+    
+    /**
+     * Check if cloud backup is enabled, used as nav guard
+     */
+    func isCloudBackupEnabled()  -> Bool
+    
+    /**
+     * Whether the persisted cloud backup passkey is missing
+     */
+    func isCloudBackupPasskeyMissing()  -> Bool
+    
+    /**
+     * Whether the persisted cloud backup state is unverified
+     */
+    func isCloudBackupUnverified()  -> Bool
+    
+    func listenForUpdates(reconciler: CloudBackupManagerReconciler) 
+    
+    func resumePendingCloudUploadVerification() 
+    
+    func state()  -> CloudBackupState
+    
+    /**
+     * Read persisted cloud backup state from DB and update in-memory state
+     *
+     * Called after bootstrap completes so the UI reflects the correct state
+     * even before the reconciler has delivered its first message
+     */
+    func syncPersistedState() 
+    
+    /**
+     * Background startup health check for cloud backup integrity
+     */
+    func verifyBackupIntegrity()  -> String?
+    
+}
+open class RustCloudBackupManager: RustCloudBackupManagerProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_cove_fn_clone_rustcloudbackupmanager(self.handle, $0) }
+    }
+public convenience init() {
+    let handle =
+        try! rustCall() {
+    uniffi_cove_fn_constructor_rustcloudbackupmanager_new($0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_cove_fn_free_rustcloudbackupmanager(handle, $0) }
+    }
+
+    
+
+    
+open func dispatch(action: CloudBackupManagerAction)  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_dispatch(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeCloudBackupManagerAction_lower(action),$0
+    )
+}
+}
+    
+    /**
+     * Back up a newly created wallet, fire-and-forget
+     *
+     * Returns immediately if cloud backup isn't enabled (e.g. during restore)
+     */
+open func backupNewWallet(metadata: WalletMetadata)  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_backup_new_wallet(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeWalletMetadata_lower(metadata),$0
+    )
+}
+}
+    
+    /**
+     * Number of wallets in the cloud backup
+     */
+open func backupWalletCount() -> UInt32?  {
+    return try!  FfiConverterOptionUInt32.lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_backup_wallet_count(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func currentStatus() -> CloudBackupStatus  {
+    return try!  FfiConverterTypeCloudBackupStatus_lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_current_status(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Reset local cloud backup state (keychain + DB) without touching iCloud
+     *
+     * Debug-only: pair with Swift-side iCloud wipe for full reset
+     */
+open func debugResetCloudBackupState()  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_debug_reset_cloud_backup_state(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+open func hasPendingCloudUploadVerification() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_has_pending_cloud_upload_verification(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Check if cloud backup is enabled, used as nav guard
+     */
+open func isCloudBackupEnabled() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_is_cloud_backup_enabled(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Whether the persisted cloud backup passkey is missing
+     */
+open func isCloudBackupPasskeyMissing() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_is_cloud_backup_passkey_missing(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Whether the persisted cloud backup state is unverified
+     */
+open func isCloudBackupUnverified() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_is_cloud_backup_unverified(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func listenForUpdates(reconciler: CloudBackupManagerReconciler)  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_listen_for_updates(
+            self.uniffiCloneHandle(),
+        FfiConverterCallbackInterfaceCloudBackupManagerReconciler_lower(reconciler),$0
+    )
+}
+}
+    
+open func resumePendingCloudUploadVerification()  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_resume_pending_cloud_upload_verification(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+open func state() -> CloudBackupState  {
+    return try!  FfiConverterTypeCloudBackupState_lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_state(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Read persisted cloud backup state from DB and update in-memory state
+     *
+     * Called after bootstrap completes so the UI reflects the correct state
+     * even before the reconciler has delivered its first message
+     */
+open func syncPersistedState()  {try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_sync_persisted_state(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Background startup health check for cloud backup integrity
+     */
+open func verifyBackupIntegrity() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_cove_fn_method_rustcloudbackupmanager_verify_backup_integrity(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRustCloudBackupManager: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = RustCloudBackupManager
+
+    public static func lift(_ handle: UInt64) throws -> RustCloudBackupManager {
+        return RustCloudBackupManager(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: RustCloudBackupManager) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RustCloudBackupManager {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: RustCloudBackupManager, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRustCloudBackupManager_lift(_ handle: UInt64) throws -> RustCloudBackupManager {
+    return try FfiConverterTypeRustCloudBackupManager.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRustCloudBackupManager_lower(_ value: RustCloudBackupManager) -> UInt64 {
+    return FfiConverterTypeRustCloudBackupManager.lower(value)
+}
+
+
+
+
+
+
 public protocol RustCoinControlManagerProtocol: AnyObject, Sendable {
     
     func buttonPresentation(button: CoinControlListSortKey)  -> ButtonPresentation
@@ -7431,6 +7714,139 @@ public func FfiConverterTypeRustImportWalletManager_lift(_ handle: UInt64) throw
 #endif
 public func FfiConverterTypeRustImportWalletManager_lower(_ value: RustImportWalletManager) -> UInt64 {
     return FfiConverterTypeRustImportWalletManager.lower(value)
+}
+
+
+
+
+
+
+public protocol RustOnboardingManagerProtocol: AnyObject, Sendable {
+    
+    func dispatch(action: OnboardingAction) 
+    
+    func listenForUpdates(reconciler: OnboardingManagerReconciler) 
+    
+}
+open class RustOnboardingManager: RustOnboardingManagerProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_cove_fn_clone_rustonboardingmanager(self.handle, $0) }
+    }
+public convenience init() {
+    let handle =
+        try! rustCall() {
+    uniffi_cove_fn_constructor_rustonboardingmanager_new($0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_cove_fn_free_rustonboardingmanager(handle, $0) }
+    }
+
+    
+
+    
+open func dispatch(action: OnboardingAction)  {try! rustCall() {
+    uniffi_cove_fn_method_rustonboardingmanager_dispatch(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeOnboardingAction_lower(action),$0
+    )
+}
+}
+    
+open func listenForUpdates(reconciler: OnboardingManagerReconciler)  {try! rustCall() {
+    uniffi_cove_fn_method_rustonboardingmanager_listen_for_updates(
+            self.uniffiCloneHandle(),
+        FfiConverterCallbackInterfaceOnboardingManagerReconciler_lower(reconciler),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRustOnboardingManager: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = RustOnboardingManager
+
+    public static func lift(_ handle: UInt64) throws -> RustOnboardingManager {
+        return RustOnboardingManager(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: RustOnboardingManager) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RustOnboardingManager {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: RustOnboardingManager, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRustOnboardingManager_lift(_ handle: UInt64) throws -> RustOnboardingManager {
+    return try FfiConverterTypeRustOnboardingManager.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRustOnboardingManager_lower(_ value: RustOnboardingManager) -> UInt64 {
+    return FfiConverterTypeRustOnboardingManager.lower(value)
 }
 
 
@@ -11273,6 +11689,11 @@ public protocol WalletsTableProtocol: AnyObject, Sendable {
     
     func allSortedActive() throws  -> [WalletMetadata]
     
+    /**
+     * Check if any wallets exist across all networks and modes
+     */
+    func hasAnyWallets() throws  -> Bool
+    
     func isEmpty() throws  -> Bool
     
     func len(network: Network, mode: WalletMode) throws  -> UInt16
@@ -11342,6 +11763,17 @@ open func all()throws  -> [WalletMetadata]  {
 open func allSortedActive()throws  -> [WalletMetadata]  {
     return try  FfiConverterSequenceTypeWalletMetadata.lift(try rustCallWithError(FfiConverterTypeDatabaseError_lift) {
     uniffi_cove_fn_method_walletstable_all_sorted_active(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Check if any wallets exist across all networks and modes
+     */
+open func hasAnyWallets()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDatabaseError_lift) {
+    uniffi_cove_fn_method_walletstable_has_any_wallets(
             self.uniffiCloneHandle(),$0
     )
 })
@@ -12300,6 +12732,426 @@ public func FfiConverterTypeBackupWalletSummary_lower(_ value: BackupWalletSumma
 }
 
 
+public struct CloudBackupDetail: Equatable, Hashable {
+    public var lastSync: UInt64?
+    public var backedUp: [CloudBackupWalletItem]
+    public var notBackedUp: [CloudBackupWalletItem]
+    /**
+     * Number of wallets in the cloud that aren't on this device
+     */
+    public var cloudOnlyCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(lastSync: UInt64?, backedUp: [CloudBackupWalletItem], notBackedUp: [CloudBackupWalletItem], 
+        /**
+         * Number of wallets in the cloud that aren't on this device
+         */cloudOnlyCount: UInt32) {
+        self.lastSync = lastSync
+        self.backedUp = backedUp
+        self.notBackedUp = notBackedUp
+        self.cloudOnlyCount = cloudOnlyCount
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudBackupDetail: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupDetail: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupDetail {
+        return
+            try CloudBackupDetail(
+                lastSync: FfiConverterOptionUInt64.read(from: &buf), 
+                backedUp: FfiConverterSequenceTypeCloudBackupWalletItem.read(from: &buf), 
+                notBackedUp: FfiConverterSequenceTypeCloudBackupWalletItem.read(from: &buf), 
+                cloudOnlyCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudBackupDetail, into buf: inout [UInt8]) {
+        FfiConverterOptionUInt64.write(value.lastSync, into: &buf)
+        FfiConverterSequenceTypeCloudBackupWalletItem.write(value.backedUp, into: &buf)
+        FfiConverterSequenceTypeCloudBackupWalletItem.write(value.notBackedUp, into: &buf)
+        FfiConverterUInt32.write(value.cloudOnlyCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupDetail_lift(_ buf: RustBuffer) throws -> CloudBackupDetail {
+    return try FfiConverterTypeCloudBackupDetail.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupDetail_lower(_ value: CloudBackupDetail) -> RustBuffer {
+    return FfiConverterTypeCloudBackupDetail.lower(value)
+}
+
+
+public struct CloudBackupProgress: Equatable, Hashable {
+    public var completed: UInt32
+    public var total: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(completed: UInt32, total: UInt32) {
+        self.completed = completed
+        self.total = total
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudBackupProgress: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupProgress {
+        return
+            try CloudBackupProgress(
+                completed: FfiConverterUInt32.read(from: &buf), 
+                total: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudBackupProgress, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.completed, into: &buf)
+        FfiConverterUInt32.write(value.total, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupProgress_lift(_ buf: RustBuffer) throws -> CloudBackupProgress {
+    return try FfiConverterTypeCloudBackupProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupProgress_lower(_ value: CloudBackupProgress) -> RustBuffer {
+    return FfiConverterTypeCloudBackupProgress.lower(value)
+}
+
+
+public struct CloudBackupRestoreProgress: Equatable, Hashable {
+    public var stage: CloudBackupRestoreStage
+    public var completed: UInt32
+    public var total: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(stage: CloudBackupRestoreStage, completed: UInt32, total: UInt32?) {
+        self.stage = stage
+        self.completed = completed
+        self.total = total
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudBackupRestoreProgress: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupRestoreProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupRestoreProgress {
+        return
+            try CloudBackupRestoreProgress(
+                stage: FfiConverterTypeCloudBackupRestoreStage.read(from: &buf), 
+                completed: FfiConverterUInt32.read(from: &buf), 
+                total: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudBackupRestoreProgress, into buf: inout [UInt8]) {
+        FfiConverterTypeCloudBackupRestoreStage.write(value.stage, into: &buf)
+        FfiConverterUInt32.write(value.completed, into: &buf)
+        FfiConverterOptionUInt32.write(value.total, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupRestoreProgress_lift(_ buf: RustBuffer) throws -> CloudBackupRestoreProgress {
+    return try FfiConverterTypeCloudBackupRestoreProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupRestoreProgress_lower(_ value: CloudBackupRestoreProgress) -> RustBuffer {
+    return FfiConverterTypeCloudBackupRestoreProgress.lower(value)
+}
+
+
+public struct CloudBackupRestoreReport: Equatable, Hashable {
+    public var walletsRestored: UInt32
+    public var walletsFailed: UInt32
+    public var failedWalletErrors: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(walletsRestored: UInt32, walletsFailed: UInt32, failedWalletErrors: [String]) {
+        self.walletsRestored = walletsRestored
+        self.walletsFailed = walletsFailed
+        self.failedWalletErrors = failedWalletErrors
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudBackupRestoreReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupRestoreReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupRestoreReport {
+        return
+            try CloudBackupRestoreReport(
+                walletsRestored: FfiConverterUInt32.read(from: &buf), 
+                walletsFailed: FfiConverterUInt32.read(from: &buf), 
+                failedWalletErrors: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudBackupRestoreReport, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.walletsRestored, into: &buf)
+        FfiConverterUInt32.write(value.walletsFailed, into: &buf)
+        FfiConverterSequenceString.write(value.failedWalletErrors, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupRestoreReport_lift(_ buf: RustBuffer) throws -> CloudBackupRestoreReport {
+    return try FfiConverterTypeCloudBackupRestoreReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupRestoreReport_lower(_ value: CloudBackupRestoreReport) -> RustBuffer {
+    return FfiConverterTypeCloudBackupRestoreReport.lower(value)
+}
+
+
+public struct CloudBackupState: Equatable, Hashable {
+    public var status: CloudBackupStatus
+    public var progress: CloudBackupProgress?
+    public var restoreProgress: CloudBackupRestoreProgress?
+    public var restoreReport: CloudBackupRestoreReport?
+    public var syncError: String?
+    public var hasPendingUploadVerification: Bool
+    public var shouldPromptVerification: Bool
+    public var verificationMetadata: CloudBackupVerificationMetadata
+    public var detail: CloudBackupDetail?
+    public var verification: VerificationState
+    public var sync: SyncState
+    public var recovery: RecoveryState
+    public var cloudOnly: CloudOnlyState
+    public var cloudOnlyOperation: CloudOnlyOperation
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(status: CloudBackupStatus, progress: CloudBackupProgress?, restoreProgress: CloudBackupRestoreProgress?, restoreReport: CloudBackupRestoreReport?, syncError: String?, hasPendingUploadVerification: Bool, shouldPromptVerification: Bool, verificationMetadata: CloudBackupVerificationMetadata, detail: CloudBackupDetail?, verification: VerificationState, sync: SyncState, recovery: RecoveryState, cloudOnly: CloudOnlyState, cloudOnlyOperation: CloudOnlyOperation) {
+        self.status = status
+        self.progress = progress
+        self.restoreProgress = restoreProgress
+        self.restoreReport = restoreReport
+        self.syncError = syncError
+        self.hasPendingUploadVerification = hasPendingUploadVerification
+        self.shouldPromptVerification = shouldPromptVerification
+        self.verificationMetadata = verificationMetadata
+        self.detail = detail
+        self.verification = verification
+        self.sync = sync
+        self.recovery = recovery
+        self.cloudOnly = cloudOnly
+        self.cloudOnlyOperation = cloudOnlyOperation
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudBackupState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupState {
+        return
+            try CloudBackupState(
+                status: FfiConverterTypeCloudBackupStatus.read(from: &buf), 
+                progress: FfiConverterOptionTypeCloudBackupProgress.read(from: &buf), 
+                restoreProgress: FfiConverterOptionTypeCloudBackupRestoreProgress.read(from: &buf), 
+                restoreReport: FfiConverterOptionTypeCloudBackupRestoreReport.read(from: &buf), 
+                syncError: FfiConverterOptionString.read(from: &buf), 
+                hasPendingUploadVerification: FfiConverterBool.read(from: &buf), 
+                shouldPromptVerification: FfiConverterBool.read(from: &buf), 
+                verificationMetadata: FfiConverterTypeCloudBackupVerificationMetadata.read(from: &buf), 
+                detail: FfiConverterOptionTypeCloudBackupDetail.read(from: &buf), 
+                verification: FfiConverterTypeVerificationState.read(from: &buf), 
+                sync: FfiConverterTypeSyncState.read(from: &buf), 
+                recovery: FfiConverterTypeRecoveryState.read(from: &buf), 
+                cloudOnly: FfiConverterTypeCloudOnlyState.read(from: &buf), 
+                cloudOnlyOperation: FfiConverterTypeCloudOnlyOperation.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudBackupState, into buf: inout [UInt8]) {
+        FfiConverterTypeCloudBackupStatus.write(value.status, into: &buf)
+        FfiConverterOptionTypeCloudBackupProgress.write(value.progress, into: &buf)
+        FfiConverterOptionTypeCloudBackupRestoreProgress.write(value.restoreProgress, into: &buf)
+        FfiConverterOptionTypeCloudBackupRestoreReport.write(value.restoreReport, into: &buf)
+        FfiConverterOptionString.write(value.syncError, into: &buf)
+        FfiConverterBool.write(value.hasPendingUploadVerification, into: &buf)
+        FfiConverterBool.write(value.shouldPromptVerification, into: &buf)
+        FfiConverterTypeCloudBackupVerificationMetadata.write(value.verificationMetadata, into: &buf)
+        FfiConverterOptionTypeCloudBackupDetail.write(value.detail, into: &buf)
+        FfiConverterTypeVerificationState.write(value.verification, into: &buf)
+        FfiConverterTypeSyncState.write(value.sync, into: &buf)
+        FfiConverterTypeRecoveryState.write(value.recovery, into: &buf)
+        FfiConverterTypeCloudOnlyState.write(value.cloudOnly, into: &buf)
+        FfiConverterTypeCloudOnlyOperation.write(value.cloudOnlyOperation, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupState_lift(_ buf: RustBuffer) throws -> CloudBackupState {
+    return try FfiConverterTypeCloudBackupState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupState_lower(_ value: CloudBackupState) -> RustBuffer {
+    return FfiConverterTypeCloudBackupState.lower(value)
+}
+
+
+public struct CloudBackupWalletItem: Equatable, Hashable {
+    public var name: String
+    public var network: Network
+    public var walletMode: WalletMode
+    public var walletType: WalletType
+    public var fingerprint: String?
+    public var status: CloudBackupWalletStatus
+    /**
+     * Deterministic cloud record ID for the wallet backup represented by this item
+     */
+    public var recordId: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, network: Network, walletMode: WalletMode, walletType: WalletType, fingerprint: String?, status: CloudBackupWalletStatus, 
+        /**
+         * Deterministic cloud record ID for the wallet backup represented by this item
+         */recordId: String) {
+        self.name = name
+        self.network = network
+        self.walletMode = walletMode
+        self.walletType = walletType
+        self.fingerprint = fingerprint
+        self.status = status
+        self.recordId = recordId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudBackupWalletItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupWalletItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupWalletItem {
+        return
+            try CloudBackupWalletItem(
+                name: FfiConverterString.read(from: &buf), 
+                network: FfiConverterTypeNetwork.read(from: &buf), 
+                walletMode: FfiConverterTypeWalletMode.read(from: &buf), 
+                walletType: FfiConverterTypeWalletType.read(from: &buf), 
+                fingerprint: FfiConverterOptionString.read(from: &buf), 
+                status: FfiConverterTypeCloudBackupWalletStatus.read(from: &buf), 
+                recordId: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudBackupWalletItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterTypeNetwork.write(value.network, into: &buf)
+        FfiConverterTypeWalletMode.write(value.walletMode, into: &buf)
+        FfiConverterTypeWalletType.write(value.walletType, into: &buf)
+        FfiConverterOptionString.write(value.fingerprint, into: &buf)
+        FfiConverterTypeCloudBackupWalletStatus.write(value.status, into: &buf)
+        FfiConverterString.write(value.recordId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupWalletItem_lift(_ buf: RustBuffer) throws -> CloudBackupWalletItem {
+    return try FfiConverterTypeCloudBackupWalletItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupWalletItem_lower(_ value: CloudBackupWalletItem) -> RustBuffer {
+    return FfiConverterTypeCloudBackupWalletItem.lower(value)
+}
+
+
 public struct ConfirmedDetails: Equatable, Hashable {
     public var blockNumber: UInt32
     public var confirmationTime: UInt64
@@ -12525,6 +13377,168 @@ public func FfiConverterTypeContinueFromInit_lift(_ buf: RustBuffer) throws -> C
 #endif
 public func FfiConverterTypeContinueFromInit_lower(_ value: ContinueFromInit) -> RustBuffer {
     return FfiConverterTypeContinueFromInit.lower(value)
+}
+
+
+public struct DeepVerificationFailure: Equatable, Hashable {
+    public var kind: VerificationFailureKind
+    public var message: String
+    public var detail: CloudBackupDetail?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: VerificationFailureKind, message: String, detail: CloudBackupDetail?) {
+        self.kind = kind
+        self.message = message
+        self.detail = detail
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DeepVerificationFailure: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDeepVerificationFailure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeepVerificationFailure {
+        return
+            try DeepVerificationFailure(
+                kind: FfiConverterTypeVerificationFailureKind.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf), 
+                detail: FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DeepVerificationFailure, into buf: inout [UInt8]) {
+        FfiConverterTypeVerificationFailureKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterOptionTypeCloudBackupDetail.write(value.detail, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeepVerificationFailure_lift(_ buf: RustBuffer) throws -> DeepVerificationFailure {
+    return try FfiConverterTypeDeepVerificationFailure.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeepVerificationFailure_lower(_ value: DeepVerificationFailure) -> RustBuffer {
+    return FfiConverterTypeDeepVerificationFailure.lower(value)
+}
+
+
+public struct DeepVerificationReport: Equatable, Hashable {
+    /**
+     * Cloud master key PRF wrapping was repaired
+     */
+    public var masterKeyWrapperRepaired: Bool
+    /**
+     * Local keychain was repaired from verified cloud master key
+     */
+    public var localMasterKeyRepaired: Bool
+    /**
+     * credential_id was recovered via discoverable auth
+     */
+    public var credentialRecovered: Bool
+    public var walletsVerified: UInt32
+    public var walletsFailed: UInt32
+    /**
+     * Wallet backups with unsupported version (newer format, skipped)
+     */
+    public var walletsUnsupported: UInt32
+    /**
+     * May be None if wallet list was missing but master key verified
+     */
+    public var detail: CloudBackupDetail?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Cloud master key PRF wrapping was repaired
+         */masterKeyWrapperRepaired: Bool, 
+        /**
+         * Local keychain was repaired from verified cloud master key
+         */localMasterKeyRepaired: Bool, 
+        /**
+         * credential_id was recovered via discoverable auth
+         */credentialRecovered: Bool, walletsVerified: UInt32, walletsFailed: UInt32, 
+        /**
+         * Wallet backups with unsupported version (newer format, skipped)
+         */walletsUnsupported: UInt32, 
+        /**
+         * May be None if wallet list was missing but master key verified
+         */detail: CloudBackupDetail?) {
+        self.masterKeyWrapperRepaired = masterKeyWrapperRepaired
+        self.localMasterKeyRepaired = localMasterKeyRepaired
+        self.credentialRecovered = credentialRecovered
+        self.walletsVerified = walletsVerified
+        self.walletsFailed = walletsFailed
+        self.walletsUnsupported = walletsUnsupported
+        self.detail = detail
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DeepVerificationReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDeepVerificationReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeepVerificationReport {
+        return
+            try DeepVerificationReport(
+                masterKeyWrapperRepaired: FfiConverterBool.read(from: &buf), 
+                localMasterKeyRepaired: FfiConverterBool.read(from: &buf), 
+                credentialRecovered: FfiConverterBool.read(from: &buf), 
+                walletsVerified: FfiConverterUInt32.read(from: &buf), 
+                walletsFailed: FfiConverterUInt32.read(from: &buf), 
+                walletsUnsupported: FfiConverterUInt32.read(from: &buf), 
+                detail: FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DeepVerificationReport, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.masterKeyWrapperRepaired, into: &buf)
+        FfiConverterBool.write(value.localMasterKeyRepaired, into: &buf)
+        FfiConverterBool.write(value.credentialRecovered, into: &buf)
+        FfiConverterUInt32.write(value.walletsVerified, into: &buf)
+        FfiConverterUInt32.write(value.walletsFailed, into: &buf)
+        FfiConverterUInt32.write(value.walletsUnsupported, into: &buf)
+        FfiConverterOptionTypeCloudBackupDetail.write(value.detail, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeepVerificationReport_lift(_ buf: RustBuffer) throws -> DeepVerificationReport {
+    return try FfiConverterTypeDeepVerificationReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeepVerificationReport_lower(_ value: DeepVerificationReport) -> RustBuffer {
+    return FfiConverterTypeDeepVerificationReport.lower(value)
 }
 
 
@@ -13841,6 +14855,60 @@ public func FfiConverterTypeTransactionExportResult_lift(_ buf: RustBuffer) thro
 #endif
 public func FfiConverterTypeTransactionExportResult_lower(_ value: TransactionExportResult) -> RustBuffer {
     return FfiConverterTypeTransactionExportResult.lower(value)
+}
+
+
+public struct UnsupportedDbVersion: Equatable, Hashable {
+    public var path: String
+    public var version: UInt8
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, version: UInt8) {
+        self.path = path
+        self.version = version
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UnsupportedDbVersion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUnsupportedDbVersion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UnsupportedDbVersion {
+        return
+            try UnsupportedDbVersion(
+                path: FfiConverterString.read(from: &buf), 
+                version: FfiConverterUInt8.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UnsupportedDbVersion, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterUInt8.write(value.version, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUnsupportedDbVersion_lift(_ buf: RustBuffer) throws -> UnsupportedDbVersion {
+    return try FfiConverterTypeUnsupportedDbVersion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUnsupportedDbVersion_lower(_ value: UnsupportedDbVersion) -> RustBuffer {
+    return FfiConverterTypeUnsupportedDbVersion.lower(value)
 }
 
 
@@ -16599,6 +17667,91 @@ public func FfiConverterTypeByteReaderError_lower(_ value: ByteReaderError) -> R
 
 
 public 
+enum CatastrophicRecoveryError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case Failure(String
+    )
+
+    
+
+    
+// The local Rust `Display` implementation.
+public var description: String {
+    return try!  FfiConverterString.lift(
+        try! rustCall() {
+    uniffi_cove_fn_method_catastrophicrecoveryerror_uniffi_trait_display(
+            FfiConverterTypeCatastrophicRecoveryError_lower(self),$0
+    )
+}
+    )
+}
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension CatastrophicRecoveryError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCatastrophicRecoveryError: FfiConverterRustBuffer {
+    typealias SwiftType = CatastrophicRecoveryError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatastrophicRecoveryError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Failure(
+            try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CatastrophicRecoveryError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .Failure(v1):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(v1, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCatastrophicRecoveryError_lift(_ buf: RustBuffer) throws -> CatastrophicRecoveryError {
+    return try FfiConverterTypeCatastrophicRecoveryError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCatastrophicRecoveryError_lower(_ value: CatastrophicRecoveryError) -> RustBuffer {
+    return FfiConverterTypeCatastrophicRecoveryError.lower(value)
+}
+
+
+public 
 enum CkTapError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
@@ -16730,10 +17883,11 @@ public func FfiConverterTypeCkTapError_lower(_ value: CkTapError) -> RustBuffer 
 
 
 
-public enum CloudBackup: Equatable, Hashable {
+public enum CloudBackupDetailResult: Equatable, Hashable {
     
-    case disabled
-    case enabled(lastSync: UInt64?
+    case success(CloudBackupDetail
+    )
+    case accessError(String
     )
 
 
@@ -16743,39 +17897,41 @@ public enum CloudBackup: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension CloudBackup: Sendable {}
+extension CloudBackupDetailResult: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeCloudBackup: FfiConverterRustBuffer {
-    typealias SwiftType = CloudBackup
+public struct FfiConverterTypeCloudBackupDetailResult: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupDetailResult
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackup {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupDetailResult {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .disabled
+        case 1: return .success(try FfiConverterTypeCloudBackupDetail.read(from: &buf)
+        )
         
-        case 2: return .enabled(lastSync: try FfiConverterOptionUInt64.read(from: &buf)
+        case 2: return .accessError(try FfiConverterString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
-    public static func write(_ value: CloudBackup, into buf: inout [UInt8]) {
+    public static func write(_ value: CloudBackupDetailResult, into buf: inout [UInt8]) {
         switch value {
         
         
-        case .disabled:
+        case let .success(v1):
             writeInt(&buf, Int32(1))
+            FfiConverterTypeCloudBackupDetail.write(v1, into: &buf)
+            
         
-        
-        case let .enabled(lastSync):
+        case let .accessError(v1):
             writeInt(&buf, Int32(2))
-            FfiConverterOptionUInt64.write(lastSync, into: &buf)
+            FfiConverterString.write(v1, into: &buf)
             
         }
     }
@@ -16785,15 +17941,903 @@ public struct FfiConverterTypeCloudBackup: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudBackup_lift(_ buf: RustBuffer) throws -> CloudBackup {
-    return try FfiConverterTypeCloudBackup.lift(buf)
+public func FfiConverterTypeCloudBackupDetailResult_lift(_ buf: RustBuffer) throws -> CloudBackupDetailResult {
+    return try FfiConverterTypeCloudBackupDetailResult.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeCloudBackup_lower(_ value: CloudBackup) -> RustBuffer {
-    return FfiConverterTypeCloudBackup.lower(value)
+public func FfiConverterTypeCloudBackupDetailResult_lower(_ value: CloudBackupDetailResult) -> RustBuffer {
+    return FfiConverterTypeCloudBackupDetailResult.lower(value)
+}
+
+
+
+
+public enum CloudBackupManagerAction: Equatable, Hashable {
+    
+    case enableCloudBackup
+    case enableCloudBackupForceNew
+    case enableCloudBackupNoDiscovery
+    case discardPendingEnableCloudBackup
+    case restoreFromCloudBackup
+    case cancelRestore
+    case startVerification
+    case startVerificationDiscoverable
+    case dismissVerificationPrompt
+    case recreateManifest
+    case reinitializeBackup
+    case repairPasskey
+    case repairPasskeyNoDiscovery
+    case syncUnsynced
+    case fetchCloudOnly
+    case restoreCloudWallet(recordId: String
+    )
+    case deleteCloudWallet(recordId: String
+    )
+    case refreshDetail
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudBackupManagerAction: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupManagerAction: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupManagerAction
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupManagerAction {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .enableCloudBackup
+        
+        case 2: return .enableCloudBackupForceNew
+        
+        case 3: return .enableCloudBackupNoDiscovery
+        
+        case 4: return .discardPendingEnableCloudBackup
+        
+        case 5: return .restoreFromCloudBackup
+        
+        case 6: return .cancelRestore
+        
+        case 7: return .startVerification
+        
+        case 8: return .startVerificationDiscoverable
+        
+        case 9: return .dismissVerificationPrompt
+        
+        case 10: return .recreateManifest
+        
+        case 11: return .reinitializeBackup
+        
+        case 12: return .repairPasskey
+        
+        case 13: return .repairPasskeyNoDiscovery
+        
+        case 14: return .syncUnsynced
+        
+        case 15: return .fetchCloudOnly
+        
+        case 16: return .restoreCloudWallet(recordId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 17: return .deleteCloudWallet(recordId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 18: return .refreshDetail
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudBackupManagerAction, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .enableCloudBackup:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .enableCloudBackupForceNew:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .enableCloudBackupNoDiscovery:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .discardPendingEnableCloudBackup:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .restoreFromCloudBackup:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .cancelRestore:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .startVerification:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .startVerificationDiscoverable:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .dismissVerificationPrompt:
+            writeInt(&buf, Int32(9))
+        
+        
+        case .recreateManifest:
+            writeInt(&buf, Int32(10))
+        
+        
+        case .reinitializeBackup:
+            writeInt(&buf, Int32(11))
+        
+        
+        case .repairPasskey:
+            writeInt(&buf, Int32(12))
+        
+        
+        case .repairPasskeyNoDiscovery:
+            writeInt(&buf, Int32(13))
+        
+        
+        case .syncUnsynced:
+            writeInt(&buf, Int32(14))
+        
+        
+        case .fetchCloudOnly:
+            writeInt(&buf, Int32(15))
+        
+        
+        case let .restoreCloudWallet(recordId):
+            writeInt(&buf, Int32(16))
+            FfiConverterString.write(recordId, into: &buf)
+            
+        
+        case let .deleteCloudWallet(recordId):
+            writeInt(&buf, Int32(17))
+            FfiConverterString.write(recordId, into: &buf)
+            
+        
+        case .refreshDetail:
+            writeInt(&buf, Int32(18))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupManagerAction_lift(_ buf: RustBuffer) throws -> CloudBackupManagerAction {
+    return try FfiConverterTypeCloudBackupManagerAction.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupManagerAction_lower(_ value: CloudBackupManagerAction) -> RustBuffer {
+    return FfiConverterTypeCloudBackupManagerAction.lower(value)
+}
+
+
+
+
+public enum CloudBackupReconcileMessage: Equatable, Hashable {
+    
+    case statusChanged(CloudBackupStatus
+    )
+    case progressChanged(CloudBackupProgress?
+    )
+    case restoreProgressChanged(CloudBackupRestoreProgress?
+    )
+    case restoreReportChanged(CloudBackupRestoreReport?
+    )
+    case syncErrorChanged(String?
+    )
+    case verificationPromptChanged(Bool
+    )
+    case verificationMetadataChanged(CloudBackupVerificationMetadata
+    )
+    case pendingUploadVerificationChanged(Bool
+    )
+    case detailChanged(CloudBackupDetail?
+    )
+    case verificationChanged(VerificationState
+    )
+    case syncChanged(SyncState
+    )
+    case recoveryChanged(RecoveryState
+    )
+    case cloudOnlyChanged(CloudOnlyState
+    )
+    case cloudOnlyOperationChanged(CloudOnlyOperation
+    )
+    case existingBackupFound
+    case passkeyDiscoveryCancelled
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudBackupReconcileMessage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupReconcileMessage: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupReconcileMessage
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupReconcileMessage {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .statusChanged(try FfiConverterTypeCloudBackupStatus.read(from: &buf)
+        )
+        
+        case 2: return .progressChanged(try FfiConverterOptionTypeCloudBackupProgress.read(from: &buf)
+        )
+        
+        case 3: return .restoreProgressChanged(try FfiConverterOptionTypeCloudBackupRestoreProgress.read(from: &buf)
+        )
+        
+        case 4: return .restoreReportChanged(try FfiConverterOptionTypeCloudBackupRestoreReport.read(from: &buf)
+        )
+        
+        case 5: return .syncErrorChanged(try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 6: return .verificationPromptChanged(try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 7: return .verificationMetadataChanged(try FfiConverterTypeCloudBackupVerificationMetadata.read(from: &buf)
+        )
+        
+        case 8: return .pendingUploadVerificationChanged(try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 9: return .detailChanged(try FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
+        )
+        
+        case 10: return .verificationChanged(try FfiConverterTypeVerificationState.read(from: &buf)
+        )
+        
+        case 11: return .syncChanged(try FfiConverterTypeSyncState.read(from: &buf)
+        )
+        
+        case 12: return .recoveryChanged(try FfiConverterTypeRecoveryState.read(from: &buf)
+        )
+        
+        case 13: return .cloudOnlyChanged(try FfiConverterTypeCloudOnlyState.read(from: &buf)
+        )
+        
+        case 14: return .cloudOnlyOperationChanged(try FfiConverterTypeCloudOnlyOperation.read(from: &buf)
+        )
+        
+        case 15: return .existingBackupFound
+        
+        case 16: return .passkeyDiscoveryCancelled
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudBackupReconcileMessage, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .statusChanged(v1):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeCloudBackupStatus.write(v1, into: &buf)
+            
+        
+        case let .progressChanged(v1):
+            writeInt(&buf, Int32(2))
+            FfiConverterOptionTypeCloudBackupProgress.write(v1, into: &buf)
+            
+        
+        case let .restoreProgressChanged(v1):
+            writeInt(&buf, Int32(3))
+            FfiConverterOptionTypeCloudBackupRestoreProgress.write(v1, into: &buf)
+            
+        
+        case let .restoreReportChanged(v1):
+            writeInt(&buf, Int32(4))
+            FfiConverterOptionTypeCloudBackupRestoreReport.write(v1, into: &buf)
+            
+        
+        case let .syncErrorChanged(v1):
+            writeInt(&buf, Int32(5))
+            FfiConverterOptionString.write(v1, into: &buf)
+            
+        
+        case let .verificationPromptChanged(v1):
+            writeInt(&buf, Int32(6))
+            FfiConverterBool.write(v1, into: &buf)
+            
+        
+        case let .verificationMetadataChanged(v1):
+            writeInt(&buf, Int32(7))
+            FfiConverterTypeCloudBackupVerificationMetadata.write(v1, into: &buf)
+            
+        
+        case let .pendingUploadVerificationChanged(v1):
+            writeInt(&buf, Int32(8))
+            FfiConverterBool.write(v1, into: &buf)
+            
+        
+        case let .detailChanged(v1):
+            writeInt(&buf, Int32(9))
+            FfiConverterOptionTypeCloudBackupDetail.write(v1, into: &buf)
+            
+        
+        case let .verificationChanged(v1):
+            writeInt(&buf, Int32(10))
+            FfiConverterTypeVerificationState.write(v1, into: &buf)
+            
+        
+        case let .syncChanged(v1):
+            writeInt(&buf, Int32(11))
+            FfiConverterTypeSyncState.write(v1, into: &buf)
+            
+        
+        case let .recoveryChanged(v1):
+            writeInt(&buf, Int32(12))
+            FfiConverterTypeRecoveryState.write(v1, into: &buf)
+            
+        
+        case let .cloudOnlyChanged(v1):
+            writeInt(&buf, Int32(13))
+            FfiConverterTypeCloudOnlyState.write(v1, into: &buf)
+            
+        
+        case let .cloudOnlyOperationChanged(v1):
+            writeInt(&buf, Int32(14))
+            FfiConverterTypeCloudOnlyOperation.write(v1, into: &buf)
+            
+        
+        case .existingBackupFound:
+            writeInt(&buf, Int32(15))
+        
+        
+        case .passkeyDiscoveryCancelled:
+            writeInt(&buf, Int32(16))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupReconcileMessage_lift(_ buf: RustBuffer) throws -> CloudBackupReconcileMessage {
+    return try FfiConverterTypeCloudBackupReconcileMessage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupReconcileMessage_lower(_ value: CloudBackupReconcileMessage) -> RustBuffer {
+    return FfiConverterTypeCloudBackupReconcileMessage.lower(value)
+}
+
+
+
+
+public enum CloudBackupRestoreStage: Equatable, Hashable {
+    
+    case finding
+    case downloading
+    case restoring
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudBackupRestoreStage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupRestoreStage: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupRestoreStage
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupRestoreStage {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .finding
+        
+        case 2: return .downloading
+        
+        case 3: return .restoring
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudBackupRestoreStage, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .finding:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .downloading:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .restoring:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupRestoreStage_lift(_ buf: RustBuffer) throws -> CloudBackupRestoreStage {
+    return try FfiConverterTypeCloudBackupRestoreStage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupRestoreStage_lower(_ value: CloudBackupRestoreStage) -> RustBuffer {
+    return FfiConverterTypeCloudBackupRestoreStage.lower(value)
+}
+
+
+
+
+public enum CloudBackupStatus: Equatable, Hashable {
+    
+    case disabled
+    case enabling
+    case restoring
+    case enabled
+    case passkeyMissing
+    case unsupportedPasskeyProvider
+    case error(String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudBackupStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupStatus: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .disabled
+        
+        case 2: return .enabling
+        
+        case 3: return .restoring
+        
+        case 4: return .enabled
+        
+        case 5: return .passkeyMissing
+        
+        case 6: return .unsupportedPasskeyProvider
+        
+        case 7: return .error(try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudBackupStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .disabled:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .enabling:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .restoring:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .enabled:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .passkeyMissing:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .unsupportedPasskeyProvider:
+            writeInt(&buf, Int32(6))
+        
+        
+        case let .error(v1):
+            writeInt(&buf, Int32(7))
+            FfiConverterString.write(v1, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupStatus_lift(_ buf: RustBuffer) throws -> CloudBackupStatus {
+    return try FfiConverterTypeCloudBackupStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupStatus_lower(_ value: CloudBackupStatus) -> RustBuffer {
+    return FfiConverterTypeCloudBackupStatus.lower(value)
+}
+
+
+
+
+public enum CloudBackupVerificationMetadata: Equatable, Hashable {
+    
+    case notConfigured
+    case configuredNeverVerified
+    case verified(UInt64
+    )
+    case needsVerification
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudBackupVerificationMetadata: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupVerificationMetadata: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupVerificationMetadata
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupVerificationMetadata {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .notConfigured
+        
+        case 2: return .configuredNeverVerified
+        
+        case 3: return .verified(try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 4: return .needsVerification
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudBackupVerificationMetadata, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .notConfigured:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .configuredNeverVerified:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .verified(v1):
+            writeInt(&buf, Int32(3))
+            FfiConverterUInt64.write(v1, into: &buf)
+            
+        
+        case .needsVerification:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupVerificationMetadata_lift(_ buf: RustBuffer) throws -> CloudBackupVerificationMetadata {
+    return try FfiConverterTypeCloudBackupVerificationMetadata.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupVerificationMetadata_lower(_ value: CloudBackupVerificationMetadata) -> RustBuffer {
+    return FfiConverterTypeCloudBackupVerificationMetadata.lower(value)
+}
+
+
+
+
+public enum CloudBackupWalletStatus: Equatable, Hashable {
+    
+    case backedUp
+    case notBackedUp
+    case deletedFromDevice
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudBackupWalletStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudBackupWalletStatus: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupWalletStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudBackupWalletStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .backedUp
+        
+        case 2: return .notBackedUp
+        
+        case 3: return .deletedFromDevice
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudBackupWalletStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .backedUp:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .notBackedUp:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .deletedFromDevice:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupWalletStatus_lift(_ buf: RustBuffer) throws -> CloudBackupWalletStatus {
+    return try FfiConverterTypeCloudBackupWalletStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudBackupWalletStatus_lower(_ value: CloudBackupWalletStatus) -> RustBuffer {
+    return FfiConverterTypeCloudBackupWalletStatus.lower(value)
+}
+
+
+
+
+public enum CloudOnlyOperation: Equatable, Hashable {
+    
+    case idle
+    case operating(recordId: String
+    )
+    case failed(error: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudOnlyOperation: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudOnlyOperation: FfiConverterRustBuffer {
+    typealias SwiftType = CloudOnlyOperation
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudOnlyOperation {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .idle
+        
+        case 2: return .operating(recordId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .failed(error: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudOnlyOperation, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .operating(recordId):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(recordId, into: &buf)
+            
+        
+        case let .failed(error):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(error, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudOnlyOperation_lift(_ buf: RustBuffer) throws -> CloudOnlyOperation {
+    return try FfiConverterTypeCloudOnlyOperation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudOnlyOperation_lower(_ value: CloudOnlyOperation) -> RustBuffer {
+    return FfiConverterTypeCloudOnlyOperation.lower(value)
+}
+
+
+
+
+public enum CloudOnlyState: Equatable, Hashable {
+    
+    case notFetched
+    case loading
+    case loaded(wallets: [CloudBackupWalletItem]
+    )
+    case failed(error: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudOnlyState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudOnlyState: FfiConverterRustBuffer {
+    typealias SwiftType = CloudOnlyState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudOnlyState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .notFetched
+        
+        case 2: return .loading
+        
+        case 3: return .loaded(wallets: try FfiConverterSequenceTypeCloudBackupWalletItem.read(from: &buf)
+        )
+        
+        case 4: return .failed(error: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudOnlyState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .notFetched:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .loading:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .loaded(wallets):
+            writeInt(&buf, Int32(3))
+            FfiConverterSequenceTypeCloudBackupWalletItem.write(wallets, into: &buf)
+            
+        
+        case let .failed(error):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(error, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudOnlyState_lift(_ buf: RustBuffer) throws -> CloudOnlyState {
+    return try FfiConverterTypeCloudOnlyState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudOnlyState_lower(_ value: CloudOnlyState) -> RustBuffer {
+    return FfiConverterTypeCloudOnlyState.lower(value)
 }
 
 
@@ -17515,6 +19559,8 @@ enum DatabaseError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError 
     case DatabaseAlreadyOpen
     case HeaderIntegrity(path: String, error: String
     )
+    case UnsupportedVersion(UnsupportedDbVersion
+    )
     case PlaintextNotAllowed(path: String
     )
 
@@ -17601,7 +19647,10 @@ public struct FfiConverterTypeDatabaseError: FfiConverterRustBuffer {
             path: try FfiConverterString.read(from: &buf), 
             error: try FfiConverterString.read(from: &buf)
             )
-        case 17: return .PlaintextNotAllowed(
+        case 17: return .UnsupportedVersion(
+            try FfiConverterTypeUnsupportedDbVersion.read(from: &buf)
+            )
+        case 18: return .PlaintextNotAllowed(
             path: try FfiConverterString.read(from: &buf)
             )
 
@@ -17696,8 +19745,13 @@ public struct FfiConverterTypeDatabaseError: FfiConverterRustBuffer {
             FfiConverterString.write(error, into: &buf)
             
         
-        case let .PlaintextNotAllowed(path):
+        case let .UnsupportedVersion(v1):
             writeInt(&buf, Int32(17))
+            FfiConverterTypeUnsupportedDbVersion.write(v1, into: &buf)
+            
+        
+        case let .PlaintextNotAllowed(path):
+            writeInt(&buf, Int32(18))
             FfiConverterString.write(path, into: &buf)
             
         }
@@ -17718,6 +19772,125 @@ public func FfiConverterTypeDatabaseError_lift(_ buf: RustBuffer) throws -> Data
 public func FfiConverterTypeDatabaseError_lower(_ value: DatabaseError) -> RustBuffer {
     return FfiConverterTypeDatabaseError.lower(value)
 }
+
+
+
+public enum DeepVerificationResult: Equatable, Hashable {
+    
+    case verified(DeepVerificationReport
+    )
+    case awaitingUploadConfirmation(DeepVerificationReport
+    )
+    case passkeyConfirmed(CloudBackupDetail?
+    )
+    case passkeyMissing(CloudBackupDetail?
+    )
+    case userCancelled(CloudBackupDetail?
+    )
+    case notEnabled
+    case failed(DeepVerificationFailure
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension DeepVerificationResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDeepVerificationResult: FfiConverterRustBuffer {
+    typealias SwiftType = DeepVerificationResult
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeepVerificationResult {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .verified(try FfiConverterTypeDeepVerificationReport.read(from: &buf)
+        )
+        
+        case 2: return .awaitingUploadConfirmation(try FfiConverterTypeDeepVerificationReport.read(from: &buf)
+        )
+        
+        case 3: return .passkeyConfirmed(try FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
+        )
+        
+        case 4: return .passkeyMissing(try FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
+        )
+        
+        case 5: return .userCancelled(try FfiConverterOptionTypeCloudBackupDetail.read(from: &buf)
+        )
+        
+        case 6: return .notEnabled
+        
+        case 7: return .failed(try FfiConverterTypeDeepVerificationFailure.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: DeepVerificationResult, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .verified(v1):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeDeepVerificationReport.write(v1, into: &buf)
+            
+        
+        case let .awaitingUploadConfirmation(v1):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeDeepVerificationReport.write(v1, into: &buf)
+            
+        
+        case let .passkeyConfirmed(v1):
+            writeInt(&buf, Int32(3))
+            FfiConverterOptionTypeCloudBackupDetail.write(v1, into: &buf)
+            
+        
+        case let .passkeyMissing(v1):
+            writeInt(&buf, Int32(4))
+            FfiConverterOptionTypeCloudBackupDetail.write(v1, into: &buf)
+            
+        
+        case let .userCancelled(v1):
+            writeInt(&buf, Int32(5))
+            FfiConverterOptionTypeCloudBackupDetail.write(v1, into: &buf)
+            
+        
+        case .notEnabled:
+            writeInt(&buf, Int32(6))
+        
+        
+        case let .failed(v1):
+            writeInt(&buf, Int32(7))
+            FfiConverterTypeDeepVerificationFailure.write(v1, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeepVerificationResult_lift(_ buf: RustBuffer) throws -> DeepVerificationResult {
+    return try FfiConverterTypeDeepVerificationResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeepVerificationResult_lower(_ value: DeepVerificationResult) -> RustBuffer {
+    return FfiConverterTypeDeepVerificationResult.lower(value)
+}
+
 
 
 public 
@@ -18625,7 +20798,6 @@ public enum GlobalConfigKey: Equatable, Hashable {
     case mainSelectedWalletId
     case decoySelectedWalletId
     case lockedAt
-    case cloudBackup
 
 
 
@@ -18673,8 +20845,6 @@ public struct FfiConverterTypeGlobalConfigKey: FfiConverterRustBuffer {
         case 12: return .decoySelectedWalletId
         
         case 13: return .lockedAt
-        
-        case 14: return .cloudBackup
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -18735,10 +20905,6 @@ public struct FfiConverterTypeGlobalConfigKey: FfiConverterRustBuffer {
         
         case .lockedAt:
             writeInt(&buf, Int32(13))
-        
-        
-        case .cloudBackup:
-            writeInt(&buf, Int32(14))
         
         }
     }
@@ -21201,6 +23367,265 @@ public func FfiConverterTypeNumberOfBip39Words_lower(_ value: NumberOfBip39Words
 
 
 
+public enum OnboardingAction: Equatable, Hashable {
+    
+    case acceptTerms
+    case cloudCheckComplete(hasBackup: Bool
+    )
+    case skipRestore
+    case startRestore
+    case restoreComplete
+    case restoreFailed(error: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OnboardingAction: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOnboardingAction: FfiConverterRustBuffer {
+    typealias SwiftType = OnboardingAction
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OnboardingAction {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .acceptTerms
+        
+        case 2: return .cloudCheckComplete(hasBackup: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 3: return .skipRestore
+        
+        case 4: return .startRestore
+        
+        case 5: return .restoreComplete
+        
+        case 6: return .restoreFailed(error: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OnboardingAction, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .acceptTerms:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .cloudCheckComplete(hasBackup):
+            writeInt(&buf, Int32(2))
+            FfiConverterBool.write(hasBackup, into: &buf)
+            
+        
+        case .skipRestore:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .startRestore:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .restoreComplete:
+            writeInt(&buf, Int32(5))
+        
+        
+        case let .restoreFailed(error):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(error, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnboardingAction_lift(_ buf: RustBuffer) throws -> OnboardingAction {
+    return try FfiConverterTypeOnboardingAction.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnboardingAction_lower(_ value: OnboardingAction) -> RustBuffer {
+    return FfiConverterTypeOnboardingAction.lower(value)
+}
+
+
+
+
+public enum OnboardingReconcileMessage: Equatable, Hashable {
+    
+    case stepChanged(OnboardingStep
+    )
+    case complete
+    case restoreError(String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OnboardingReconcileMessage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOnboardingReconcileMessage: FfiConverterRustBuffer {
+    typealias SwiftType = OnboardingReconcileMessage
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OnboardingReconcileMessage {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .stepChanged(try FfiConverterTypeOnboardingStep.read(from: &buf)
+        )
+        
+        case 2: return .complete
+        
+        case 3: return .restoreError(try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OnboardingReconcileMessage, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .stepChanged(v1):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeOnboardingStep.write(v1, into: &buf)
+            
+        
+        case .complete:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .restoreError(v1):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(v1, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnboardingReconcileMessage_lift(_ buf: RustBuffer) throws -> OnboardingReconcileMessage {
+    return try FfiConverterTypeOnboardingReconcileMessage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnboardingReconcileMessage_lower(_ value: OnboardingReconcileMessage) -> RustBuffer {
+    return FfiConverterTypeOnboardingReconcileMessage.lower(value)
+}
+
+
+
+
+public enum OnboardingStep: Equatable, Hashable {
+    
+    case terms
+    case cloudCheck
+    case restoreOffer
+    case restoring
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OnboardingStep: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOnboardingStep: FfiConverterRustBuffer {
+    typealias SwiftType = OnboardingStep
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OnboardingStep {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .terms
+        
+        case 2: return .cloudCheck
+        
+        case 3: return .restoreOffer
+        
+        case 4: return .restoring
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OnboardingStep, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .terms:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .cloudCheck:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .restoreOffer:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .restoring:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnboardingStep_lift(_ buf: RustBuffer) throws -> OnboardingStep {
+    return try FfiConverterTypeOnboardingStep.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnboardingStep_lower(_ value: OnboardingStep) -> RustBuffer {
+    return FfiConverterTypeOnboardingStep.lower(value)
+}
+
+
+
+
 public enum PendingOrConfirmed: Equatable, Hashable {
     
     case pending(PendingDetails
@@ -21487,6 +23912,159 @@ public func FfiConverterTypePendingWalletManagerReconcileMessage_lift(_ buf: Rus
 #endif
 public func FfiConverterTypePendingWalletManagerReconcileMessage_lower(_ value: PendingWalletManagerReconcileMessage) -> RustBuffer {
     return FfiConverterTypePendingWalletManagerReconcileMessage.lower(value)
+}
+
+
+
+
+public enum RecoveryAction: Equatable, Hashable {
+    
+    case recreateManifest
+    case reinitializeBackup
+    case repairPasskey
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RecoveryAction: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecoveryAction: FfiConverterRustBuffer {
+    typealias SwiftType = RecoveryAction
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecoveryAction {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .recreateManifest
+        
+        case 2: return .reinitializeBackup
+        
+        case 3: return .repairPasskey
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RecoveryAction, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .recreateManifest:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .reinitializeBackup:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .repairPasskey:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoveryAction_lift(_ buf: RustBuffer) throws -> RecoveryAction {
+    return try FfiConverterTypeRecoveryAction.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoveryAction_lower(_ value: RecoveryAction) -> RustBuffer {
+    return FfiConverterTypeRecoveryAction.lower(value)
+}
+
+
+
+
+public enum RecoveryState: Equatable, Hashable {
+    
+    case idle
+    case recovering(RecoveryAction
+    )
+    case failed(action: RecoveryAction, error: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RecoveryState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecoveryState: FfiConverterRustBuffer {
+    typealias SwiftType = RecoveryState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecoveryState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .idle
+        
+        case 2: return .recovering(try FfiConverterTypeRecoveryAction.read(from: &buf)
+        )
+        
+        case 3: return .failed(action: try FfiConverterTypeRecoveryAction.read(from: &buf), error: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RecoveryState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .recovering(v1):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeRecoveryAction.write(v1, into: &buf)
+            
+        
+        case let .failed(action,error):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeRecoveryAction.write(action, into: &buf)
+            FfiConverterString.write(error, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoveryState_lift(_ buf: RustBuffer) throws -> RecoveryState {
+    return try FfiConverterTypeRecoveryState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoveryState_lower(_ value: RecoveryState) -> RustBuffer {
+    return FfiConverterTypeRecoveryState.lower(value)
 }
 
 
@@ -23789,6 +26367,7 @@ public enum SettingsRoute: Equatable, Hashable {
     )
     case allWallets
     case about
+    case cloudBackup
 
 
 
@@ -23826,6 +26405,8 @@ public struct FfiConverterTypeSettingsRoute: FfiConverterRustBuffer {
         case 7: return .allWallets
         
         case 8: return .about
+        
+        case 9: return .cloudBackup
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -23867,6 +26448,10 @@ public struct FfiConverterTypeSettingsRoute: FfiConverterRustBuffer {
         
         case .about:
             writeInt(&buf, Int32(8))
+        
+        
+        case .cloudBackup:
+            writeInt(&buf, Int32(9))
         
         }
     }
@@ -24364,6 +26949,82 @@ public func FfiConverterTypeStringOrData_lift(_ buf: RustBuffer) throws -> Strin
 #endif
 public func FfiConverterTypeStringOrData_lower(_ value: StringOrData) -> RustBuffer {
     return FfiConverterTypeStringOrData.lower(value)
+}
+
+
+
+
+public enum SyncState: Equatable, Hashable {
+    
+    case idle
+    case syncing
+    case failed(String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SyncState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncState: FfiConverterRustBuffer {
+    typealias SwiftType = SyncState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .idle
+        
+        case 2: return .syncing
+        
+        case 3: return .failed(try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SyncState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .syncing:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .failed(v1):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(v1, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncState_lift(_ buf: RustBuffer) throws -> SyncState {
+    return try FfiConverterTypeSyncState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncState_lower(_ value: SyncState) -> RustBuffer {
+    return FfiConverterTypeSyncState.lower(value)
 }
 
 
@@ -25077,6 +27738,8 @@ enum TransactionDetailError: Swift.Error, Equatable, Hashable, Foundation.Locali
     )
     case ChangeAddress(String
     )
+    case UnsupportedNetwork(String
+    )
     case NotFound
 
     
@@ -25132,7 +27795,10 @@ public struct FfiConverterTypeTransactionDetailError: FfiConverterRustBuffer {
         case 5: return .ChangeAddress(
             try FfiConverterString.read(from: &buf)
             )
-        case 6: return .NotFound
+        case 6: return .UnsupportedNetwork(
+            try FfiConverterString.read(from: &buf)
+            )
+        case 7: return .NotFound
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -25170,8 +27836,13 @@ public struct FfiConverterTypeTransactionDetailError: FfiConverterRustBuffer {
             FfiConverterString.write(v1, into: &buf)
             
         
-        case .NotFound:
+        case let .UnsupportedNetwork(v1):
             writeInt(&buf, Int32(6))
+            FfiConverterString.write(v1, into: &buf)
+            
+        
+        case .NotFound:
+            writeInt(&buf, Int32(7))
         
         }
     }
@@ -25735,6 +28406,204 @@ public func FfiConverterTypeUrType_lower(_ value: UrType) -> RustBuffer {
 
 
 
+public enum VerificationFailureKind: Equatable, Hashable {
+    
+    /**
+     * Transient iCloud/network/passkey error — safe to retry
+     */
+    case retry
+    /**
+     * Manifest missing, master key verified intact — recreate from local wallets
+     */
+    case recreateManifest(warning: String
+    )
+    /**
+     * No verified cloud or local master key available — full re-enable needed
+     */
+    case reinitializeBackup(warning: String
+    )
+    /**
+     * Backup uses a newer format — do not overwrite
+     */
+    case unsupportedVersion
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension VerificationFailureKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVerificationFailureKind: FfiConverterRustBuffer {
+    typealias SwiftType = VerificationFailureKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VerificationFailureKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .retry
+        
+        case 2: return .recreateManifest(warning: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .reinitializeBackup(warning: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .unsupportedVersion
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: VerificationFailureKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .retry:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .recreateManifest(warning):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(warning, into: &buf)
+            
+        
+        case let .reinitializeBackup(warning):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(warning, into: &buf)
+            
+        
+        case .unsupportedVersion:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVerificationFailureKind_lift(_ buf: RustBuffer) throws -> VerificationFailureKind {
+    return try FfiConverterTypeVerificationFailureKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVerificationFailureKind_lower(_ value: VerificationFailureKind) -> RustBuffer {
+    return FfiConverterTypeVerificationFailureKind.lower(value)
+}
+
+
+
+
+public enum VerificationState: Equatable, Hashable {
+    
+    case idle
+    case verifying
+    case verified(DeepVerificationReport
+    )
+    case passkeyConfirmed
+    case failed(DeepVerificationFailure
+    )
+    case cancelled
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension VerificationState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVerificationState: FfiConverterRustBuffer {
+    typealias SwiftType = VerificationState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VerificationState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .idle
+        
+        case 2: return .verifying
+        
+        case 3: return .verified(try FfiConverterTypeDeepVerificationReport.read(from: &buf)
+        )
+        
+        case 4: return .passkeyConfirmed
+        
+        case 5: return .failed(try FfiConverterTypeDeepVerificationFailure.read(from: &buf)
+        )
+        
+        case 6: return .cancelled
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: VerificationState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .verifying:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .verified(v1):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeDeepVerificationReport.write(v1, into: &buf)
+            
+        
+        case .passkeyConfirmed:
+            writeInt(&buf, Int32(4))
+        
+        
+        case let .failed(v1):
+            writeInt(&buf, Int32(5))
+            FfiConverterTypeDeepVerificationFailure.write(v1, into: &buf)
+            
+        
+        case .cancelled:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVerificationState_lift(_ buf: RustBuffer) throws -> VerificationState {
+    return try FfiConverterTypeVerificationState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVerificationState_lower(_ value: VerificationState) -> RustBuffer {
+    return FfiConverterTypeVerificationState.lower(value)
+}
+
+
+
+
 public enum WalletAddressType: Equatable, Hashable, CustomStringConvertible {
     
     case nativeSegwit
@@ -26163,6 +29032,8 @@ enum WalletDataError: Swift.Error, Equatable, Hashable, Foundation.LocalizedErro
     )
     case Save(String
     )
+    case UnsupportedVersion(id: WalletId, version: UnsupportedDbVersion
+    )
 
     
 
@@ -26216,6 +29087,10 @@ public struct FfiConverterTypeWalletDataError: FfiConverterRustBuffer {
         case 4: return .Save(
             try FfiConverterString.read(from: &buf)
             )
+        case 5: return .UnsupportedVersion(
+            id: try FfiConverterTypeWalletId.read(from: &buf), 
+            version: try FfiConverterTypeUnsupportedDbVersion.read(from: &buf)
+            )
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -26248,6 +29123,12 @@ public struct FfiConverterTypeWalletDataError: FfiConverterRustBuffer {
         case let .Save(v1):
             writeInt(&buf, Int32(4))
             FfiConverterString.write(v1, into: &buf)
+            
+        
+        case let .UnsupportedVersion(id,version):
+            writeInt(&buf, Int32(5))
+            FfiConverterTypeWalletId.write(id, into: &buf)
+            FfiConverterTypeUnsupportedDbVersion.write(version, into: &buf)
             
         }
     }
@@ -28269,6 +31150,137 @@ public func FfiConverterCallbackInterfaceAuthManagerReconciler_lower(_ v: AuthMa
 
 
 
+public protocol CloudBackupManagerReconciler: AnyObject, Sendable {
+    
+    func reconcile(message: CloudBackupReconcileMessage) 
+    
+}
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceCloudBackupManagerReconciler {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceCloudBackupManagerReconciler = UniffiVTableCallbackInterfaceCloudBackupManagerReconciler(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterCallbackInterfaceCloudBackupManagerReconciler.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface CloudBackupManagerReconciler: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterCallbackInterfaceCloudBackupManagerReconciler.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface CloudBackupManagerReconciler: handle missing in uniffiClone")
+            }
+        },
+        reconcile: { (
+            uniffiHandle: UInt64,
+            message: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterCallbackInterfaceCloudBackupManagerReconciler.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.reconcile(
+                     message: try FfiConverterTypeCloudBackupReconcileMessage_lift(message)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceCloudBackupManagerReconciler> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceCloudBackupManagerReconciler>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitCloudBackupManagerReconciler() {
+    uniffi_cove_fn_init_callback_vtable_cloudbackupmanagerreconciler(UniffiCallbackInterfaceCloudBackupManagerReconciler.vtablePtr)
+}
+
+// FfiConverter protocol for callback interfaces
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterCallbackInterfaceCloudBackupManagerReconciler {
+    fileprivate static let handleMap = UniffiHandleMap<CloudBackupManagerReconciler>()
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+extension FfiConverterCallbackInterfaceCloudBackupManagerReconciler : FfiConverter {
+    typealias SwiftType = CloudBackupManagerReconciler
+    typealias FfiType = UInt64
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func lift(_ handle: UInt64) throws -> SwiftType {
+        try handleMap.get(handle: handle)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func lower(_ v: SwiftType) -> UInt64 {
+        return handleMap.insert(obj: v)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func write(_ v: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(v))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterCallbackInterfaceCloudBackupManagerReconciler_lift(_ handle: UInt64) throws -> CloudBackupManagerReconciler {
+    return try FfiConverterCallbackInterfaceCloudBackupManagerReconciler.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterCallbackInterfaceCloudBackupManagerReconciler_lower(_ v: CloudBackupManagerReconciler) -> UInt64 {
+    return FfiConverterCallbackInterfaceCloudBackupManagerReconciler.lower(v)
+}
+
+
+
+
 public protocol CoinControlManagerReconciler: AnyObject, Sendable {
     
     /**
@@ -28692,6 +31704,137 @@ public func FfiConverterCallbackInterfaceImportWalletManagerReconciler_lift(_ ha
 #endif
 public func FfiConverterCallbackInterfaceImportWalletManagerReconciler_lower(_ v: ImportWalletManagerReconciler) -> UInt64 {
     return FfiConverterCallbackInterfaceImportWalletManagerReconciler.lower(v)
+}
+
+
+
+
+public protocol OnboardingManagerReconciler: AnyObject, Sendable {
+    
+    func reconcile(message: OnboardingReconcileMessage) 
+    
+}
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceOnboardingManagerReconciler {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceOnboardingManagerReconciler = UniffiVTableCallbackInterfaceOnboardingManagerReconciler(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterCallbackInterfaceOnboardingManagerReconciler.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface OnboardingManagerReconciler: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterCallbackInterfaceOnboardingManagerReconciler.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface OnboardingManagerReconciler: handle missing in uniffiClone")
+            }
+        },
+        reconcile: { (
+            uniffiHandle: UInt64,
+            message: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterCallbackInterfaceOnboardingManagerReconciler.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.reconcile(
+                     message: try FfiConverterTypeOnboardingReconcileMessage_lift(message)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceOnboardingManagerReconciler> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceOnboardingManagerReconciler>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitOnboardingManagerReconciler() {
+    uniffi_cove_fn_init_callback_vtable_onboardingmanagerreconciler(UniffiCallbackInterfaceOnboardingManagerReconciler.vtablePtr)
+}
+
+// FfiConverter protocol for callback interfaces
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterCallbackInterfaceOnboardingManagerReconciler {
+    fileprivate static let handleMap = UniffiHandleMap<OnboardingManagerReconciler>()
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+extension FfiConverterCallbackInterfaceOnboardingManagerReconciler : FfiConverter {
+    typealias SwiftType = OnboardingManagerReconciler
+    typealias FfiType = UInt64
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func lift(_ handle: UInt64) throws -> SwiftType {
+        try handleMap.get(handle: handle)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func lower(_ v: SwiftType) -> UInt64 {
+        return handleMap.insert(obj: v)
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public static func write(_ v: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(v))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterCallbackInterfaceOnboardingManagerReconciler_lift(_ handle: UInt64) throws -> OnboardingManagerReconciler {
+    return try FfiConverterCallbackInterfaceOnboardingManagerReconciler.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterCallbackInterfaceOnboardingManagerReconciler_lower(_ v: OnboardingManagerReconciler) -> UInt64 {
+    return FfiConverterCallbackInterfaceOnboardingManagerReconciler.lower(v)
 }
 
 
@@ -29686,6 +32829,102 @@ fileprivate struct FfiConverterOptionTypePsbt: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeCloudBackupDetail: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupDetail?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCloudBackupDetail.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCloudBackupDetail.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCloudBackupProgress: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupProgress?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCloudBackupProgress.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCloudBackupProgress.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCloudBackupRestoreProgress: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupRestoreProgress?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCloudBackupRestoreProgress.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCloudBackupRestoreProgress.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCloudBackupRestoreReport: FfiConverterRustBuffer {
+    typealias SwiftType = CloudBackupRestoreReport?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCloudBackupRestoreReport.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCloudBackupRestoreReport.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeDeriveInfo: FfiConverterRustBuffer {
     typealias SwiftType = DeriveInfo?
 
@@ -30188,6 +33427,31 @@ fileprivate struct FfiConverterSequenceTypeBackupWalletSummary: FfiConverterRust
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeBackupWalletSummary.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCloudBackupWalletItem: FfiConverterRustBuffer {
+    typealias SwiftType = [CloudBackupWalletItem]
+
+    public static func write(_ value: [CloudBackupWalletItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCloudBackupWalletItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CloudBackupWalletItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CloudBackupWalletItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCloudBackupWalletItem.read(from: &buf))
         }
         return seq
     }
@@ -30785,6 +34049,15 @@ public func setRootDataDir(path: String)throws   {try rustCallWithError(FfiConve
 }
 }
 /**
+ * Initialize the global App instance (Updater, router, state)
+ * Must be called after storage bootstrap completes
+ */
+public func initializeApp()  {try! rustCall() {
+    uniffi_cove_fn_func_initialize_app($0
+    )
+}
+}
+/**
  * Async bootstrap: initializes the tokio runtime, runs critical storage bootstrap
  * (encryption key derivation + redb migrations) on a blocking thread, then
  * attempts BDK migration. BDK migration failures are non-blocking — the app
@@ -30833,6 +34106,31 @@ public func cancelBootstrap()  {try! rustCall() {
     uniffi_cove_fn_func_cancel_bootstrap($0
     )
 }
+}
+/**
+ * Reset bootstrap progress so recovery flows can re-run bootstrap
+ *
+ * Clears the bootstrap step, storage bootstrapped flag, cancellation flag,
+ * active migration, and cached CSPP master key. This does not rotate the
+ * local database encryption key, which is expected to remain stable across
+ * restore and re-bootstrap flows
+ */
+public func resetBootstrapForRestore()  {try! rustCall() {
+    uniffi_cove_fn_func_reset_bootstrap_for_restore($0
+    )
+}
+}
+/**
+ * Returns the absolute path to the root data directory
+ *
+ * Used by iOS to set isExcludedFromBackup on the data directory,
+ * preventing encrypted database files from being included in device backups
+ */
+public func rootDataDirPath() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cove_fn_func_root_data_dir_path($0
+    )
+})
 }
 /**
  * Returns the active migration object if one has been registered,
@@ -30885,6 +34183,48 @@ public func updatePricesIfNeeded()async   {
             errorHandler: nil
             
         )
+}
+public func csppMasterKeyFilename() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cove_fn_func_cspp_master_key_filename($0
+    )
+})
+}
+public func csppMasterKeyRecordId() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cove_fn_func_cspp_master_key_record_id($0
+    )
+})
+}
+public func csppNamespacesSubdirectory() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cove_fn_func_cspp_namespaces_subdirectory($0
+    )
+})
+}
+public func csppWalletFilePrefix() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cove_fn_func_cspp_wallet_file_prefix($0
+    )
+})
+}
+public func csppWalletFilenameFromRecordId(recordId: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cove_fn_func_cspp_wallet_filename_from_record_id(
+        FfiConverterString.lower(recordId),$0
+    )
+})
+}
+/**
+ * Reset local state for the database-encryption-key-mismatch recovery flow
+ *
+ * Removes wallet keychain items, deletes local databases, then reinitializes
+ * the database handle so bootstrap can start from a clean state
+ */
+public func resetLocalDataForCatastrophicRecovery()throws   {try rustCallWithError(FfiConverterTypeCatastrophicRecoveryError_lift) {
+    uniffi_cove_fn_func_reset_local_data_for_catastrophic_recovery($0
+    )
+}
 }
 public func sendFlowAlertStateFromAddressError(error: AddressError, address: String) -> SendFlowAlertState  {
     return try!  FfiConverterTypeSendFlowAlertState_lift(try! rustCall() {
@@ -31116,6 +34456,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_func_set_root_data_dir() != 56109) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cove_checksum_func_initialize_app() != 18498) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cove_checksum_func_bootstrap() != 30405) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -31123,6 +34466,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_func_cancel_bootstrap() != 59164) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_func_reset_bootstrap_for_restore() != 45489) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_func_root_data_dir_path() != 42460) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_func_active_migration() != 29388) {
@@ -31141,6 +34490,24 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_func_updatepricesifneeded() != 5753) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_func_cspp_master_key_filename() != 60745) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_func_cspp_master_key_record_id() != 23703) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_func_cspp_namespaces_subdirectory() != 8147) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_func_cspp_wallet_file_prefix() != 10192) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_func_cspp_wallet_filename_from_record_id() != 30909) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_func_reset_local_data_for_catastrophic_recovery() != 19583) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_func_send_flow_alert_state_from_address_error() != 25696) {
@@ -31407,16 +34774,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_globalconfigtable_clear_selected_wallet() != 50864) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cove_checksum_method_globalconfigtable_cloud_backup() != 65410) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_cove_checksum_method_globalconfigtable_colorscheme() != 59965) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_globalconfigtable_delete() != 4239) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_cove_checksum_method_globalconfigtable_delete_cloud_backup() != 7359) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_globalconfigtable_delete_hashed_pin_code() != 24897) {
@@ -31453,9 +34814,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_globalconfigtable_setcolorscheme() != 39030) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_cove_checksum_method_globalconfigtable_set_cloud_backup() != 11846) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_globalconfigtable_set_hashed_pin_code() != 44857) {
@@ -31510,6 +34868,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_walletstable_all_sorted_active() != 25765) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_walletstable_has_any_wallets() != 24799) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_walletstable_is_empty() != 59967) {
@@ -31617,6 +34978,48 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_rustauthmanager_validate_security_action() != 4302) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_dispatch() != 54131) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_backup_new_wallet() != 25342) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_backup_wallet_count() != 17456) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_current_status() != 9796) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_debug_reset_cloud_backup_state() != 45375) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_has_pending_cloud_upload_verification() != 4437) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_is_cloud_backup_enabled() != 34679) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_is_cloud_backup_passkey_missing() != 13082) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_is_cloud_backup_unverified() != 14699) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_listen_for_updates() != 57718) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_resume_pending_cloud_upload_verification() != 24590) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_state() != 8780) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_sync_persisted_state() != 19758) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustcloudbackupmanager_verify_backup_integrity() != 47801) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cove_checksum_method_rustcoincontrolmanager_button_presentation() != 24764) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -31648,6 +35051,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustimportwalletmanager_listen_for_updates() != 12813) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustonboardingmanager_dispatch() != 60436) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_rustonboardingmanager_listen_for_updates() != 1994) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_rustpendingwalletmanager_bip_39_words() != 13908) {
@@ -32277,6 +35686,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_constructor_rustauthmanager_new() != 54478) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cove_checksum_constructor_rustcloudbackupmanager_new() != 6990) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cove_checksum_constructor_rustcoincontrolmanager_preview_new() != 19053) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -32284,6 +35696,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_constructor_rustimportwalletmanager_new() != 12433) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_constructor_rustonboardingmanager_new() != 42858) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_constructor_rustpendingwalletmanager_new() != 1933) {
@@ -32397,6 +35812,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cove_checksum_method_authmanagerreconciler_reconcile() != 565) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cove_checksum_method_cloudbackupmanagerreconciler_reconcile() != 23183) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cove_checksum_method_coincontrolmanagerreconciler_reconcile() != 28640) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -32404,6 +35822,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_importwalletmanagerreconciler_reconcile() != 13279) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cove_checksum_method_onboardingmanagerreconciler_reconcile() != 13047) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cove_checksum_method_pendingwalletmanagerreconciler_reconcile() != 54948) {
@@ -32433,9 +35854,11 @@ private let initializationResult: InitializationResult = {
 
     uniffiCallbackInitAutoComplete()
     uniffiCallbackInitAuthManagerReconciler()
+    uniffiCallbackInitCloudBackupManagerReconciler()
     uniffiCallbackInitCoinControlManagerReconciler()
     uniffiCallbackInitFfiReconcile()
     uniffiCallbackInitImportWalletManagerReconciler()
+    uniffiCallbackInitOnboardingManagerReconciler()
     uniffiCallbackInitPendingWalletManagerReconciler()
     uniffiCallbackInitSendFlowManagerReconciler()
     uniffiCallbackInitTapcardTransportProtocol()

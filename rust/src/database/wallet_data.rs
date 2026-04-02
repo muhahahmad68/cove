@@ -21,14 +21,14 @@ use ahash::AHashMap as HashMap;
 pub static DATABASE_CONNECTIONS: Lazy<RwLock<HashMap<WalletId, Arc<redb::Database>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
-fn database_location(id: &WalletId, location: &Path) -> PathBuf {
+fn database_location(id: &WalletId, location: &Path) -> Result<PathBuf, std::io::Error> {
     let dir = location.join(id.as_str());
 
     if !dir.exists() {
-        std::fs::create_dir_all(&dir).expect("always work to create dir");
+        std::fs::create_dir_all(&dir)?;
     }
 
-    dir.join("wallet_data.json")
+    Ok(dir.join("wallet_data.encrypted.json.redb"))
 }
 
 pub(crate) const TABLE: TableDefinition<&'static str, Json<WalletData>> =
@@ -79,6 +79,9 @@ pub enum WalletDataError {
 
     #[error("Unable to save: {0}")]
     Save(String),
+
+    #[error("Unsupported database version for wallet {id}: {version}")]
+    UnsupportedVersion { id: WalletId, version: super::error::UnsupportedDbVersion },
 }
 
 pub type Error = WalletDataError;
@@ -188,7 +191,8 @@ impl WalletDataDb {
 
 /// Get an existing database or create a new one
 pub fn get_or_create_database(id: &WalletId, location: &Path) -> Result<Arc<redb::Database>> {
-    let path = database_location(id, location);
+    let path = database_location(id, location)
+        .map_err(|e| WalletDataError::DatabaseAccess { id: id.clone(), error: e.to_string() })?;
 
     // check if we already have a database connection for this id and return it
     {
@@ -198,8 +202,12 @@ pub fn get_or_create_database(id: &WalletId, location: &Path) -> Result<Arc<redb
         }
     }
 
-    let db = super::encrypted_backend::open_or_create_database(&path)
-        .map_err(|e| WalletDataError::DatabaseAccess { id: id.clone(), error: e.to_string() })?;
+    let db = super::encrypted_backend::open_or_create_database(&path).map_err(|e| match e {
+        super::error::DatabaseError::UnsupportedVersion(version) => {
+            WalletDataError::UnsupportedVersion { id: id.clone(), version }
+        }
+        other => WalletDataError::DatabaseAccess { id: id.clone(), error: other.to_string() },
+    })?;
 
     let mut db_connections = DATABASE_CONNECTIONS.write();
     let db = Arc::new(db);
@@ -218,7 +226,7 @@ fn delete_database_at_location(id: &WalletId, location: &Path) -> Result<(), std
         db_connections.remove(id);
     }
 
-    std::fs::remove_file(database_location(id, location))
+    std::fs::remove_file(database_location(id, location)?)
 }
 
 impl WalletDataKey {

@@ -145,6 +145,12 @@ compile-android:
 test test="" flags="":
     cargo nextest run {{test}} --workspace {{flags}}
 
+# Run tests the same way as GitHub Actions
+[group('test')]
+[working-directory: 'rust']
+test-gh test="" flags="":
+    cargo test {{test}} --workspace {{flags}}
+
 # Run tests with cargo test
 [group('test')]
 [working-directory: 'rust']
@@ -370,8 +376,18 @@ alias iac := install-android-clean
 
 # Run iOS app
 [group('util')]
-run-ios:
-    just xtask run-ios && just notf "done run ios"
+run-ios *args:
+    just xtask run-ios {{args}} && just notf "done run ios"
+
+[private]
+alias ri := run-ios
+
+[group('util')]
+build-run-ios:
+    just bidd && just ri
+
+[private]
+alias bri := build-run-ios
 
 # Show logcat for cove process
 [group('util')]

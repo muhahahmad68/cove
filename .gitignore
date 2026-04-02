@@ -22,3 +22,4 @@ cove-signing-key.zip
 upload_certificate.pem
 /.jjconflict-base-*
 *.o
+/ios/build

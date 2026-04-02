@@ -12,6 +12,7 @@ use crate::{
 };
 
 use super::{Database, Error};
+use crate::manager::cloud_backup_manager::CLOUD_BACKUP_MANAGER;
 use cove_types::WalletId;
 use cove_types::redb::Json;
 
@@ -74,6 +75,26 @@ impl WalletsTable {
         Ok(self.len(network, wallet_mode)? == 0)
     }
 
+    /// Check if any wallets exist across all networks and modes
+    pub fn has_any_wallets(&self) -> Result<bool, Error> {
+        use strum::IntoEnumIterator;
+
+        let table = self.read_table()?;
+        if table.is_empty()? {
+            return Ok(false);
+        }
+
+        for network in Network::iter() {
+            for mode in WalletMode::iter() {
+                if self.len(network, mode)? > 0 {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
     pub fn len(&self, network: Network, mode: WalletMode) -> Result<u16, Error> {
         let count = self.get_all(network, mode).map(|wallets| wallets.len() as u16)?;
 
@@ -106,6 +127,32 @@ impl WalletsTable {
 }
 
 impl WalletsTable {
+    fn save_new_wallet_metadata_with_backup_behavior(
+        &self,
+        wallet: WalletMetadata,
+        should_backup_to_cloud: bool,
+    ) -> Result<(), Error> {
+        let network = wallet.network;
+        let mode = wallet.wallet_mode;
+
+        let mut wallets = self.get_all(network, mode)?;
+
+        if wallets.iter().any(|w| w.id == wallet.id) {
+            return Err(WalletTableError::WalletAlreadyExists.into());
+        }
+
+        let wallet_for_backup = should_backup_to_cloud.then(|| wallet.clone());
+        wallets.push(wallet);
+        self.save_all_wallets(network, mode, wallets)?;
+
+        Updater::send_update(Update::WalletsChanged);
+        if let Some(wallet_for_backup) = wallet_for_backup {
+            CLOUD_BACKUP_MANAGER.backup_new_wallet(wallet_for_backup);
+        }
+
+        Ok(())
+    }
+
     pub fn new(db: Arc<redb::Database>, write_txn: &redb::WriteTransaction) -> Self {
         // create table if it doesn't exist
         write_txn.open_table(TABLE).expect("failed to create table");
@@ -233,21 +280,11 @@ impl WalletsTable {
     }
 
     pub fn save_new_wallet_metadata(&self, wallet: WalletMetadata) -> Result<(), Error> {
-        let network = wallet.network;
-        let mode = wallet.wallet_mode;
+        self.save_new_wallet_metadata_with_backup_behavior(wallet, true)
+    }
 
-        let mut wallets = self.get_all(network, mode)?;
-
-        if wallets.iter().any(|w| w.id == wallet.id) {
-            return Err(WalletTableError::WalletAlreadyExists.into());
-        }
-
-        wallets.push(wallet);
-        self.save_all_wallets(network, mode, wallets)?;
-
-        Updater::send_update(Update::WalletsChanged);
-
-        Ok(())
+    pub fn save_restored_wallet_metadata(&self, wallet: WalletMetadata) -> Result<(), Error> {
+        self.save_new_wallet_metadata_with_backup_behavior(wallet, false)
     }
 
     pub fn save_all_wallets(

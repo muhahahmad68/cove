@@ -1,15 +1,9 @@
 import SwiftUI
 
 struct OnboardingContainer: View {
-    @State private var manager: OnboardingManager
+    let manager: OnboardingManager
     let auth: AuthManager
     let onComplete: () -> Void
-
-    init(manager: OnboardingManager, auth: AuthManager, onComplete: @escaping () -> Void) {
-        _manager = State(initialValue: manager)
-        self.auth = auth
-        self.onComplete = onComplete
-    }
 
     var body: some View {
         CloudBackupPresentationHost(

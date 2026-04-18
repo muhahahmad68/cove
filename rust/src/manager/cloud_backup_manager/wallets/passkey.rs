@@ -211,7 +211,7 @@ pub async fn try_match_namespace_with_passkey(
     }
 
     for (namespace_id, encrypted) in downloaded.iter().skip(1) {
-        let prf_output = match {
+        let prf_output_result = {
             let passkey = passkey.clone();
             let credential_id = discovered.credential_id.clone();
             let prf_salt = encrypted.prf_salt;
@@ -224,7 +224,9 @@ pub async fn try_match_namespace_with_passkey(
                 )
             })
             .await
-        } {
+        };
+
+        let prf_output = match prf_output_result {
             Ok(prf_output) => prf_output,
             Err(PasskeyError::UserCancelled) => return Ok(NamespaceMatchOutcome::UserDeclined),
             Err(error) => {
@@ -235,6 +237,7 @@ pub async fn try_match_namespace_with_passkey(
         };
 
         let prf_key = prf_output_to_key(prf_output)?;
+
         if let Ok(master_key) =
             cove_cspp::master_key_crypto::decrypt_master_key(encrypted, &prf_key)
         {
@@ -244,6 +247,7 @@ pub async fn try_match_namespace_with_passkey(
                 prf_salt: encrypted.prf_salt,
                 credential_id: discovered.credential_id.clone(),
             };
+
             return Ok(NamespaceMatchOutcome::Matched(matched));
         }
     }
